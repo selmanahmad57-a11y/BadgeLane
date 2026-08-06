@@ -125,6 +125,7 @@ vide affichant le nom de l'école, ton rôle, son fuseau et sa devise.
 | `npm run db:grant` | Crée le rôle applicatif et lui accorde ses droits |
 | `npm run db:studio` | Explorateur Drizzle |
 | `npm run db:verify` | Audite l'isolation multi-tenant |
+| `npm run i18n:verify` | Vérifie que tous les catalogues ont les mêmes clés |
 
 ---
 

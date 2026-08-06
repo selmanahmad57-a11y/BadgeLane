@@ -215,6 +215,19 @@ export async function probeTenantIsolation(
     return Number(rows[0]?.visible ?? -1);
   };
 
+  const insertProgram = (organizationId: string) =>
+    runner.query(
+      `insert into "program" (organization_id, name) values ($1, $2)`,
+      [organizationId, `probe program ${organizationId}`],
+    );
+
+  const countVisiblePrograms = async (): Promise<number> => {
+    const { rows } = await runner.query(
+      `select count(*)::int as visible from "program"`,
+    );
+    return Number(rows[0]?.visible ?? -1);
+  };
+
   await runner.query("begin");
 
   try {
@@ -228,12 +241,26 @@ export async function probeTenantIsolation(
       );
     }
 
+    /**
+     * Le curriculum est la donnée la plus révélatrice qu'une école possède :
+     * ses programmes, ses niveaux, sa pédagogie. Il est donc éprouvé
+     * explicitement, et pas seulement au travers de la table `organization`.
+     */
+    await insertProgram(firstOrganizationId);
+
     await switchToTenant(secondOrganizationId);
 
     const leaked = await countVisibleOrganizations();
     if (leaked !== 0) {
       problems.push(
         `FUITE ENTRE TENANTS : depuis le contexte d'une autre école, ${leaked} ligne(s) restent visibles. La RLS ne filtre pas.`,
+      );
+    }
+
+    const leakedPrograms = await countVisiblePrograms();
+    if (leakedPrograms !== 0) {
+      problems.push(
+        `FUITE DE CURRICULUM : depuis le contexte d'une autre école, ${leakedPrograms} programme(s) restent visibles.`,
       );
     }
 

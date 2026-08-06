@@ -23,6 +23,13 @@
     "createHeading": "Crea tu escuela",
     "createBody": "La escuela es tu espacio de trabajo: personal, clases, familias y facturación viven dentro de ella."
   },
+  "navigation": {
+    "label": "Navegación principal",
+    "dashboard": "Panel",
+    "curriculum": "Plan de estudios",
+    "locations": "Sedes",
+    "staff": "Personal"
+  },
   "dashboard": {
     "heading": "Panel",
     "welcome": "Sesión iniciada como {name}",
@@ -31,15 +38,73 @@
     "timezoneLabel": "Zona horaria",
     "currencyLabel": "Moneda",
     "emptyHeading": "Todavía no hay nada que mostrar",
-    "emptyBody": "Tu escuela está conectada y aislada. Los programas, las clases y las familias llegan en las próximas etapas."
+    "emptyBody": "Tu escuela está conectada y aislada. Las clases, las familias y la facturación llegan en las próximas etapas."
   },
-  "localeSwitcher": {
-    "label": "Cambiar de idioma"
+  "curriculum": {
+    "heading": "Plan de estudios",
+    "intro": "Los programas contienen niveles, y los niveles contienen habilidades. Esto es lo que los instructores marcarán junto a la piscina, y lo que se convertirá en insignias en el perfil de cada nadador.",
+    "newProgram": "Nuevo programa",
+    "programName": "Nombre del programa",
+    "programNamePlaceholder": "Aprender a nadar",
+    "programDescription": "Descripción",
+    "programDescriptionPlaceholder": "Descripción (opcional)",
+    "addProgram": "Añadir programa",
+    "levelName": "Nombre del nivel",
+    "levelNamePlaceholder": "Pececito",
+    "levelColor": "Color del nivel",
+    "addLevel": "Añadir nivel",
+    "noLevels": "Todavía no hay niveles.",
+    "skillName": "Habilidad",
+    "skillNamePlaceholder": "Flota durante 5 segundos",
+    "addSkill": "Añadir habilidad",
+    "delete": "Eliminar",
+    "emptyHeading": "Todavía no hay programas",
+    "emptyBody": "Empieza por un programa — muchas escuelas comienzan con uno llamado «Aprender a nadar» — y añade después sus niveles y las habilidades de cada nivel.",
+    "emptyBodyReadOnly": "Todavía no se ha creado ningún programa. Un propietario o administrador puede añadirlos."
+  },
+  "locations": {
+    "heading": "Sedes",
+    "intro": "Las piscinas y los lugares donde se imparten tus clases.",
+    "newLocation": "Nueva sede",
+    "name": "Nombre de la sede",
+    "namePlaceholder": "Piscina principal",
+    "address": "Dirección",
+    "addressPlaceholder": "Dirección (opcional)",
+    "add": "Añadir sede",
+    "save": "Guardar",
+    "delete": "Eliminar",
+    "emptyHeading": "Todavía no hay sedes",
+    "emptyBody": "Añade las piscinas donde se imparten tus clases. Luego podrás asignarles clases desde el horario.",
+    "emptyBodyReadOnly": "Todavía no se ha añadido ninguna sede. Un propietario o administrador puede añadirlas."
+  },
+  "staff": {
+    "heading": "Personal",
+    "intro": "Quién trabaja en tu escuela y qué puede hacer cada persona.",
+    "inviteHeading": "Invitar a un miembro del personal",
+    "email": "Correo electrónico",
+    "emailPlaceholder": "instructor@ejemplo.com",
+    "role": "Rol",
+    "invite": "Enviar invitación",
+    "inviteHint": "Recibirá una invitación por correo. Su cuenta aparecerá aquí cuando la acepte e inicie sesión por primera vez.",
+    "saveRole": "Guardar rol",
+    "deactivate": "Desactivar",
+    "reactivate": "Reactivar",
+    "deactivated": "Desactivado — sin acceso",
+    "you": "(tú)"
   },
   "roles": {
     "owner": "Propietario",
     "admin": "Administrador",
     "coach": "Instructor"
+  },
+  "actionErrors": {
+    "unauthenticated": "Tu sesión ha caducado. Vuelve a iniciar sesión.",
+    "forbidden": "Tu rol no permite esta acción.",
+    "invalid": "Revisa los campos e inténtalo de nuevo.",
+    "unexpected": "Algo salió mal. Vuelve a intentarlo en un momento."
+  },
+  "localeSwitcher": {
+    "label": "Cambiar de idioma"
   },
   "errors": {
     "notFoundHeading": "Página no encontrada",

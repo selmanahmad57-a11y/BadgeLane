@@ -44,3 +44,22 @@ export function resolveStaffRole(clerkOrganizationRole: string | null | undefine
   if (!clerkOrganizationRole) return FALLBACK_STAFF_ROLE;
   return CLERK_ROLE_TO_STAFF_ROLE[clerkOrganizationRole] ?? FALLBACK_STAFF_ROLE;
 }
+
+/**
+ * Correspondance inverse, pour les invitations : Clerk n'accepte que ses
+ * propres rôles d'organisation.
+ *
+ * `owner` n'y figure pas volontairement. Il ne s'obtient pas par invitation —
+ * il revient au créateur de l'école, ou s'accorde ensuite depuis les réglages
+ * BadgeLane, où la base fait autorité.
+ */
+export const STAFF_ROLE_TO_CLERK_ROLE: Readonly<
+  Record<Exclude<StaffRole, "owner">, string>
+> = {
+  admin: "org:admin",
+  coach: "org:member",
+};
+
+/** Rôles pouvant être attribués lors d'une invitation. */
+export const INVITABLE_STAFF_ROLES = ["admin", "coach"] as const satisfies
+  readonly Exclude<StaffRole, "owner">[];

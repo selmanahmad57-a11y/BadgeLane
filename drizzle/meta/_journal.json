@@ -15,6 +15,20 @@
       "when": 1785989352797,
       "tag": "0001_force_row_level_security",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786030564894,
+      "tag": "0002_square_anthem",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786030588267,
+      "tag": "0003_force_rls_curriculum",
+      "breakpoints": true
     }
   ]
 }

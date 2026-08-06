@@ -12,7 +12,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:grant": "tsx scripts/db-grant.ts",
     "db:studio": "drizzle-kit studio",
-    "db:verify": "tsx scripts/db-verify.ts"
+    "db:verify": "tsx scripts/db-verify.ts",
+    "i18n:verify": "tsx scripts/i18n-verify.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

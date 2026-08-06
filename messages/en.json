@@ -23,6 +23,13 @@
     "createHeading": "Create your school",
     "createBody": "A school is your workspace: staff, classes, families and billing all live inside it."
   },
+  "navigation": {
+    "label": "Main navigation",
+    "dashboard": "Dashboard",
+    "curriculum": "Curriculum",
+    "locations": "Locations",
+    "staff": "Staff"
+  },
   "dashboard": {
     "heading": "Dashboard",
     "welcome": "Signed in as {name}",
@@ -31,15 +38,73 @@
     "timezoneLabel": "Time zone",
     "currencyLabel": "Currency",
     "emptyHeading": "Nothing to show yet",
-    "emptyBody": "Your school is connected and isolated. Programs, classes and families arrive in the next milestones."
+    "emptyBody": "Your school is connected and isolated. Classes, families and billing arrive in the next milestones."
   },
-  "localeSwitcher": {
-    "label": "Change language"
+  "curriculum": {
+    "heading": "Curriculum",
+    "intro": "Programs hold levels, levels hold skills. This is what coaches will tick off at the pool, and what turns into badges on a swimmer's profile.",
+    "newProgram": "New program",
+    "programName": "Program name",
+    "programNamePlaceholder": "Learn to Swim",
+    "programDescription": "Description",
+    "programDescriptionPlaceholder": "Description (optional)",
+    "addProgram": "Add program",
+    "levelName": "Level name",
+    "levelNamePlaceholder": "Guppy",
+    "levelColor": "Level colour",
+    "addLevel": "Add level",
+    "noLevels": "No levels yet.",
+    "skillName": "Skill",
+    "skillNamePlaceholder": "Floats for 5 seconds",
+    "addSkill": "Add skill",
+    "delete": "Delete",
+    "emptyHeading": "No programs yet",
+    "emptyBody": "Start with a program — most schools begin with one called “Learn to Swim” — then add its levels and the skills each level requires.",
+    "emptyBodyReadOnly": "No programs have been created yet. An owner or administrator can add them."
+  },
+  "locations": {
+    "heading": "Locations",
+    "intro": "The pools and sites where your classes take place.",
+    "newLocation": "New location",
+    "name": "Location name",
+    "namePlaceholder": "Main pool",
+    "address": "Address",
+    "addressPlaceholder": "Address (optional)",
+    "add": "Add location",
+    "save": "Save",
+    "delete": "Delete",
+    "emptyHeading": "No locations yet",
+    "emptyBody": "Add the pools where your classes take place. You will assign classes to them from the schedule.",
+    "emptyBodyReadOnly": "No locations have been added yet. An owner or administrator can add them."
+  },
+  "staff": {
+    "heading": "Staff",
+    "intro": "Who works at your school, and what each person is allowed to do.",
+    "inviteHeading": "Invite a staff member",
+    "email": "Email address",
+    "emailPlaceholder": "coach@example.com",
+    "role": "Role",
+    "invite": "Send invitation",
+    "inviteHint": "They receive an email invitation. Their account appears here once they accept and sign in for the first time.",
+    "saveRole": "Save role",
+    "deactivate": "Deactivate",
+    "reactivate": "Reactivate",
+    "deactivated": "Deactivated — no access",
+    "you": "(you)"
   },
   "roles": {
     "owner": "Owner",
     "admin": "Administrator",
     "coach": "Coach"
+  },
+  "actionErrors": {
+    "unauthenticated": "Your session has expired. Sign in again.",
+    "forbidden": "Your role does not allow this action.",
+    "invalid": "Check the fields and try again.",
+    "unexpected": "Something went wrong. Try again in a moment."
+  },
+  "localeSwitcher": {
+    "label": "Change language"
   },
   "errors": {
     "notFoundHeading": "Page not found",

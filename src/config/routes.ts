@@ -14,6 +14,9 @@ export const routes = {
   signUp: "/sign-up",
   createOrganization: "/create-organization",
   dashboard: "/dashboard",
+  curriculum: "/curriculum",
+  locations: "/locations",
+  staff: "/staff",
 } as const;
 
 export type AppRoute = (typeof routes)[keyof typeof routes];
@@ -25,6 +28,9 @@ export type AppRoute = (typeof routes)[keyof typeof routes];
 export const AUTHENTICATED_ROUTES: readonly AppRoute[] = [
   routes.createOrganization,
   routes.dashboard,
+  routes.curriculum,
+  routes.locations,
+  routes.staff,
 ];
 
 /**
@@ -33,7 +39,18 @@ export const AUTHENTICATED_ROUTES: readonly AppRoute[] = [
  */
 export const ORGANIZATION_SCOPED_ROUTES: readonly AppRoute[] = [
   routes.dashboard,
+  routes.curriculum,
+  routes.locations,
+  routes.staff,
 ];
+
+/** Entrées de la navigation principale de la console d'administration. */
+export const CONSOLE_NAVIGATION = [
+  { route: routes.dashboard, messageKey: "dashboard" },
+  { route: routes.curriculum, messageKey: "curriculum" },
+  { route: routes.locations, messageKey: "locations" },
+  { route: routes.staff, messageKey: "staff" },
+] as const;
 
 /**
  * Paramètre de requête portant la destination d'origine lors d'une redirection

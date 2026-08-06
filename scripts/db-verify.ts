@@ -1,9 +1,22 @@
 import { neonConfig, Pool } from "@neondatabase/serverless";
 import { config as loadEnvFile } from "dotenv";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import ws from "ws";
 
+import { TENANT_CONTEXT_SETTING } from "../src/config/database";
 import { checkTenantIsolation, probeTenantIsolation } from "../src/db/isolation";
+import {
+  family,
+  level,
+  organization,
+  program,
+  student,
+} from "../src/db/schema";
+import {
+  assertBelongsToTenant,
+  CrossTenantReferenceError,
+} from "../src/db/tenant-guard";
 
 /**
  * Vérifie que la base applique réellement l'isolation multi-tenant.
@@ -69,6 +82,22 @@ async function main(): Promise<number> {
       }
     }
 
+    /**
+     * 3. La garde applicative refuse-t-elle une référence inter-écoles ?
+     *
+     * Ni la RLS ni les contraintes Postgres ne couvrent ce cas : les clés
+     * étrangères sont vérifiées sans appliquer les politiques de sécurité.
+     * Seule `assertBelongsToTenant` s'y oppose — et une garde jamais éprouvée
+     * n'est qu'une intention.
+     */
+    if (structure.ok && defaults) {
+      const guardProblems = await probeCrossTenantGuard(db, defaults);
+      console.log(
+        "Garde applicative — affectation d'un niveau appartenant à une autre école.",
+      );
+      problems.push(...guardProblems);
+    }
+
     if (problems.length === 0) {
       console.log("\nIsolation multi-tenant : OK.");
       return 0;
@@ -82,6 +111,148 @@ async function main(): Promise<number> {
   } finally {
     await pool.end();
   }
+}
+
+/** Annule la transaction de sonde sans être confondue avec une vraie erreur. */
+class ProbeRollback extends Error {
+  constructor() {
+    super("rollback de sonde");
+    this.name = "ProbeRollback";
+  }
+}
+
+/**
+ * Éprouve `assertBelongsToTenant` sur le cas qui compte : affecter à un élève
+ * un niveau appartenant à une **autre** école.
+ *
+ * Trois constats successifs :
+ *  1. la garde refuse bien la référence croisée ;
+ *  2. elle laisse évidemment passer une référence légitime ;
+ *  3. contrôle négatif — sans elle, la base *accepterait* l'affectation,
+ *     puisque Postgres ne soumet pas les clés étrangères à la RLS.
+ *
+ * Le troisième point est le plus important : il prouve que la garde n'est pas
+ * une précaution redondante mais la seule protection existante.
+ */
+async function probeCrossTenantGuard(
+  db: ReturnType<typeof drizzle>,
+  defaults: { timezone: string; currency: string; country: string; supportedLanguages: string[] },
+): Promise<string[]> {
+  const problems: string[] = [];
+  const firstOrganizationId = `probe_a_${crypto.randomUUID()}`;
+  const secondOrganizationId = `probe_b_${crypto.randomUUID()}`;
+
+  try {
+    await db.transaction(async (tx) => {
+      const useTenantContext = (organizationId: string) =>
+        tx.execute(
+          sql`select set_config(${TENANT_CONTEXT_SETTING}, ${organizationId}, true)`,
+        );
+
+      const insertOrganization = (id: string) =>
+        tx.insert(organization).values({
+          id,
+          name: id,
+          timezone: defaults.timezone,
+          currency: defaults.currency,
+          country: defaults.country,
+          supportedLanguages: defaults.supportedLanguages,
+        });
+
+      // ── École A : un programme et un niveau ──────────────────────────────
+      await useTenantContext(firstOrganizationId);
+      await insertOrganization(firstOrganizationId);
+
+      const [programA] = await tx
+        .insert(program)
+        .values({ organizationId: firstOrganizationId, name: "probe program" })
+        .returning();
+
+      const [levelA] = await tx
+        .insert(level)
+        .values({
+          organizationId: firstOrganizationId,
+          programId: programA.id,
+          name: "probe level",
+          sortOrder: 10,
+          color: "#000000",
+        })
+        .returning();
+
+      // ── École B : une famille et un élève ────────────────────────────────
+      await useTenantContext(secondOrganizationId);
+      await insertOrganization(secondOrganizationId);
+
+      const [familyB] = await tx
+        .insert(family)
+        .values({
+          organizationId: secondOrganizationId,
+          primaryGuardianName: "probe guardian",
+          email: "probe@example.invalid",
+          preferredLanguage: defaults.supportedLanguages[0],
+        })
+        .returning();
+
+      const [studentB] = await tx
+        .insert(student)
+        .values({
+          organizationId: secondOrganizationId,
+          familyId: familyB.id,
+          firstName: "Probe",
+          lastName: "Swimmer",
+          dateOfBirth: "2015-01-01",
+        })
+        .returning();
+
+      // ── 1. La garde doit refuser le niveau de l'école A ──────────────────
+      let refused = false;
+      try {
+        await assertBelongsToTenant(
+          tx,
+          level,
+          "level",
+          levelA.id,
+          secondOrganizationId,
+        );
+      } catch (error) {
+        refused = error instanceof CrossTenantReferenceError;
+      }
+
+      if (!refused) {
+        problems.push(
+          "GARDE INOPÉRANTE : assertBelongsToTenant a accepté un niveau appartenant à une autre école.",
+        );
+      }
+
+      // ── 2. Contrôle négatif : la base, elle, l'accepterait ───────────────
+      await tx
+        .update(student)
+        .set({ currentLevelId: levelA.id })
+        .where(eq(student.id, studentB.id));
+
+      const [written] = await tx
+        .select({ currentLevelId: student.currentLevelId })
+        .from(student)
+        .where(eq(student.id, studentB.id));
+
+      if (written?.currentLevelId !== levelA.id) {
+        /**
+         * Si Postgres refusait de lui-même, la garde serait redondante — et
+         * l'hypothèse sur laquelle repose tout ce module serait fausse. Le
+         * signaler plutôt que de laisser croire à une protection inexistante.
+         */
+        problems.push(
+          "HYPOTHÈSE À REVOIR : la base a refusé d'elle-même la référence inter-écoles ; vérifier si la garde applicative reste nécessaire.",
+        );
+      }
+
+      throw new ProbeRollback();
+    });
+  } catch (error) {
+    if (!(error instanceof ProbeRollback)) throw error;
+  }
+
+  return problems;
 }
 
 /**

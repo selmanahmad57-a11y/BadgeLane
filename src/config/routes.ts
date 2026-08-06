@@ -14,10 +14,21 @@ export const routes = {
   signUp: "/sign-up",
   createOrganization: "/create-organization",
   dashboard: "/dashboard",
+  families: "/families",
   curriculum: "/curriculum",
   locations: "/locations",
   staff: "/staff",
 } as const;
+
+/** Chemin d'une fiche famille. */
+export function familyPath(familyId: string): string {
+  return `${routes.families}/${familyId}`;
+}
+
+/** Chemin d'une fiche élève, toujours sous sa famille. */
+export function studentPath(familyId: string, studentId: string): string {
+  return `${familyPath(familyId)}/students/${studentId}`;
+}
 
 export type AppRoute = (typeof routes)[keyof typeof routes];
 
@@ -28,6 +39,7 @@ export type AppRoute = (typeof routes)[keyof typeof routes];
 export const AUTHENTICATED_ROUTES: readonly AppRoute[] = [
   routes.createOrganization,
   routes.dashboard,
+  routes.families,
   routes.curriculum,
   routes.locations,
   routes.staff,
@@ -39,6 +51,7 @@ export const AUTHENTICATED_ROUTES: readonly AppRoute[] = [
  */
 export const ORGANIZATION_SCOPED_ROUTES: readonly AppRoute[] = [
   routes.dashboard,
+  routes.families,
   routes.curriculum,
   routes.locations,
   routes.staff,
@@ -47,6 +60,7 @@ export const ORGANIZATION_SCOPED_ROUTES: readonly AppRoute[] = [
 /** Entrées de la navigation principale de la console d'administration. */
 export const CONSOLE_NAVIGATION = [
   { route: routes.dashboard, messageKey: "dashboard" },
+  { route: routes.families, messageKey: "families" },
   { route: routes.curriculum, messageKey: "curriculum" },
   { route: routes.locations, messageKey: "locations" },
   { route: routes.staff, messageKey: "staff" },

@@ -228,6 +228,42 @@ export async function probeTenantIsolation(
     return Number(rows[0]?.visible ?? -1);
   };
 
+  /**
+   * Une famille et un élève : les données les plus sensibles du schéma. Une
+   * fuite ici ne serait pas un incident technique mais la divulgation de
+   * l'identité d'un enfant à une école tierce.
+   */
+  const insertFamilyAndStudent = async (organizationId: string) => {
+    const { rows } = await runner.query(
+      `insert into "family"
+         (organization_id, primary_guardian_name, email, preferred_language)
+       values ($1, $2, $3, $4)
+       returning id`,
+      [
+        organizationId,
+        `probe guardian ${organizationId}`,
+        `probe+${organizationId}@example.invalid`,
+        defaults.supportedLanguages[0],
+      ],
+    );
+
+    const familyId = rows[0]?.id as string;
+
+    await runner.query(
+      `insert into "student"
+         (organization_id, family_id, first_name, last_name, date_of_birth)
+       values ($1, $2, $3, $4, $5)`,
+      [organizationId, familyId, "Probe", "Swimmer", "2015-01-01"],
+    );
+  };
+
+  const countVisibleStudents = async (): Promise<number> => {
+    const { rows } = await runner.query(
+      `select count(*)::int as visible from "student"`,
+    );
+    return Number(rows[0]?.visible ?? -1);
+  };
+
   await runner.query("begin");
 
   try {
@@ -247,6 +283,7 @@ export async function probeTenantIsolation(
      * explicitement, et pas seulement au travers de la table `organization`.
      */
     await insertProgram(firstOrganizationId);
+    await insertFamilyAndStudent(firstOrganizationId);
 
     await switchToTenant(secondOrganizationId);
 
@@ -261,6 +298,13 @@ export async function probeTenantIsolation(
     if (leakedPrograms !== 0) {
       problems.push(
         `FUITE DE CURRICULUM : depuis le contexte d'une autre école, ${leakedPrograms} programme(s) restent visibles.`,
+      );
+    }
+
+    const leakedStudents = await countVisibleStudents();
+    if (leakedStudents !== 0) {
+      problems.push(
+        `FUITE DE DONNÉES D'ENFANTS : depuis le contexte d'une autre école, ${leakedStudents} élève(s) restent visibles.`,
       );
     }
 
@@ -295,6 +339,6 @@ export async function probeTenantIsolation(
   return {
     ok: problems.length === 0,
     problems,
-    checkedTables: ["organization"],
+    checkedTables: ["organization", "program", "family", "student"],
   };
 }

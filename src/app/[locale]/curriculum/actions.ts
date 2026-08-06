@@ -11,6 +11,7 @@ import {
 } from "@/config/validation";
 import { level, program, skill } from "@/db/schema";
 import { withTenant, type TenantTransaction } from "@/db/tenant";
+import { assertBelongsToTenant } from "@/db/tenant-guard";
 import type { ActionResult } from "@/lib/action-result";
 import {
   optionalText,
@@ -33,33 +34,6 @@ const CURRICULUM_PATH = `/[locale]${routes.curriculum}`;
 
 function revalidateCurriculum() {
   revalidatePath(CURRICULUM_PATH, "page");
-}
-
-/**
- * Vérifie qu'une ligne parente appartient bien à l'école courante.
- *
- * Indispensable, et non redondant avec la RLS : Postgres vérifie les
- * contraintes de clé étrangère en interne, **sans appliquer les politiques de
- * sécurité**. Rattacher un niveau au programme d'une autre école serait donc
- * accepté par la base. Seule cette lecture — elle, soumise à la RLS — l'empêche.
- */
-async function assertBelongsToTenant(
-  tx: TenantTransaction,
-  table: typeof program | typeof level,
-  id: string,
-  organizationId: string,
-): Promise<void> {
-  const [row] = await tx
-    .select({ id: table.id })
-    .from(table)
-    .where(and(eq(table.id, id), eq(table.organizationId, organizationId)))
-    .limit(1);
-
-  if (!row) {
-    throw new ValidationError(
-      "L'élément parent n'existe pas dans cette école.",
-    );
-  }
 }
 
 /** Position suivante dans une liste, calculée depuis le maximum en base. */
@@ -160,7 +134,13 @@ export async function createLevel(formData: FormData): Promise<ActionResult> {
     const color = requiredColor(formData);
 
     await withTenant(context.organizationId, async (tx) => {
-      await assertBelongsToTenant(tx, program, programId, context.organizationId);
+      await assertBelongsToTenant(
+        tx,
+        program,
+        "program",
+        programId,
+        context.organizationId,
+      );
 
       await tx.insert(level).values({
         organizationId: context.organizationId,
@@ -229,7 +209,13 @@ export async function createSkill(formData: FormData): Promise<ActionResult> {
     );
 
     await withTenant(context.organizationId, async (tx) => {
-      await assertBelongsToTenant(tx, level, levelId, context.organizationId);
+      await assertBelongsToTenant(
+        tx,
+        level,
+        "level",
+        levelId,
+        context.organizationId,
+      );
 
       await tx.insert(skill).values({
         organizationId: context.organizationId,

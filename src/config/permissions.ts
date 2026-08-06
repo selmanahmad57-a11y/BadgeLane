@@ -18,6 +18,8 @@ export const CAPABILITIES = [
   "location:write",
   /** Inviter du personnel et changer les rôles. */
   "staff:manage",
+  /** Créer, modifier, supprimer familles, tuteurs et élèves. */
+  "family:write",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -29,8 +31,23 @@ export type Capability = (typeof CAPABILITIES)[number];
  */
 const CAPABILITIES_BY_ROLE: Readonly<Record<StaffRole, readonly Capability[]>> =
   {
-    owner: ["curriculum:write", "location:write", "staff:manage"],
-    admin: ["curriculum:write", "location:write", "staff:manage"],
+    owner: [
+      "curriculum:write",
+      "location:write",
+      "staff:manage",
+      "family:write",
+    ],
+    admin: [
+      "curriculum:write",
+      "location:write",
+      "staff:manage",
+      "family:write",
+    ],
+    /**
+     * Le coach consulte familles et élèves depuis le bord du bassin — il a
+     * besoin de savoir qui il encadre, et de lire les notes médicales. Il ne
+     * les modifie pas : la fiche d'un enfant est tenue par l'administration.
+     */
     coach: [],
   };
 

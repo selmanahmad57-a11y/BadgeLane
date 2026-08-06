@@ -1,6 +1,9 @@
 import "server-only";
 
+import { isSupportedLocale } from "@/config/i18n";
 import { ForbiddenError, assertCan, type Capability } from "@/config/permissions";
+import { STUDENT_AGE_BOUNDS } from "@/config/validation";
+import { CrossTenantReferenceError } from "@/db/tenant-guard";
 
 import {
   actionFailed,
@@ -65,6 +68,16 @@ export async function runAuthorizedAction(
     if (error instanceof ValidationError) {
       return actionFailed("invalid");
     }
+
+    /**
+     * Une référence vers une autre école est traitée comme une saisie
+     * invalide, et non comme un refus explicite : répondre « interdit »
+     * confirmerait à qui sonde des identifiants que la ligne existe ailleurs.
+     */
+    if (error instanceof CrossTenantReferenceError) {
+      return actionFailed("invalid");
+    }
+
     throw error;
   }
 }
@@ -132,6 +145,70 @@ export function requiredUuid(formData: FormData, field: string): string {
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)
   ) {
     throw new ValidationError(`Identifiant « ${field} » invalide.`);
+  }
+
+  return raw;
+}
+
+/**
+ * Identifiant UUID facultatif : une chaîne vide devient `null`.
+ *
+ * Utilisé par les sélecteurs dont l'option « aucun » vaut la chaîne vide —
+ * le niveau d'un élève, par exemple, tant qu'il n'en a pas été assigné.
+ */
+export function optionalUuid(formData: FormData, field: string): string | null {
+  const raw = formData.get(field);
+
+  if (typeof raw !== "string" || raw.trim() === "") return null;
+
+  return requiredUuid(formData, field);
+}
+
+/**
+ * Langue préférée, validée contre les langues réellement activées.
+ *
+ * Volontairement contrôlée ici plutôt que par un type Postgres : activer une
+ * langue reste une variable d'environnement, sans migration de base (§2 du
+ * blueprint).
+ */
+export function requiredLocale(formData: FormData, field: string): string {
+  const raw = formData.get(field);
+
+  if (typeof raw !== "string" || !isSupportedLocale(raw)) {
+    throw new ValidationError(`Langue « ${String(raw)} » non activée.`);
+  }
+
+  return raw;
+}
+
+/**
+ * Date au format ISO `AAAA-MM-JJ`, telle que produite par `input[type=date]`.
+ *
+ * Les bornes d'âge ne servent qu'à rattraper une faute de frappe sur l'année —
+ * une naissance en 1025 ou en 2925 n'est pas une donnée, c'est une erreur de
+ * saisie.
+ */
+export function requiredBirthDate(formData: FormData, field: string): string {
+  const raw = formData.get(field);
+
+  if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    throw new ValidationError(`Date « ${field} » absente ou mal formée.`);
+  }
+
+  const parsed = new Date(`${raw}T00:00:00Z`);
+
+  if (Number.isNaN(parsed.getTime())) {
+    throw new ValidationError(`Date « ${raw} » inexistante.`);
+  }
+
+  const ageInYears =
+    (Date.now() - parsed.getTime()) / (365.2425 * 24 * 60 * 60 * 1000);
+
+  if (
+    ageInYears < STUDENT_AGE_BOUNDS.minimum ||
+    ageInYears > STUDENT_AGE_BOUNDS.maximum
+  ) {
+    throw new ValidationError(`Date de naissance « ${raw} » invraisemblable.`);
   }
 
   return raw;

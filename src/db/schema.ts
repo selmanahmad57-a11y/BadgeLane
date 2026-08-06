@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -259,6 +260,121 @@ export const skill = pgTable(
   ],
 );
 
+/**
+ * Le foyer client : l'unité de facturation et, plus tard, de connexion au
+ * portail parent.
+ *
+ * `preferredLanguage` est un simple `text`, et non un enum : figer les langues
+ * dans le type Postgres imposerait une migration à chaque nouvelle langue,
+ * exactement ce que le §2 du blueprint cherche à éviter. La valeur est validée
+ * à l'écriture contre les langues configurées.
+ */
+export const family = pgTable(
+  "family",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+
+    primaryGuardianName: text("primary_guardian_name").notNull(),
+
+    /**
+     * Obligatoire : c'est le canal des rapports de progression, des relances de
+     * paiement et des liens text-to-pay (§5). Une famille injoignable rend
+     * l'essentiel du produit inopérant.
+     */
+    email: text("email").notNull(),
+    phone: text("phone"),
+
+    preferredLanguage: text("preferred_language").notNull(),
+
+    ...timestamps,
+  },
+  (table) => [
+    index("family_organization_id_idx").on(table.organizationId),
+    tenantIsolationPolicy("family", "organization_id"),
+  ],
+);
+
+/**
+ * Un tuteur rattaché à une famille : parent, grand-parent, responsable légal.
+ *
+ * Simple enregistrement de contact à ce stade. L'accès au portail parent
+ * viendra en Semaine 10 ; aucune authentification n'est associée ici.
+ */
+export const guardian = pgTable(
+  "guardian",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    familyId: uuid("family_id")
+      .notNull()
+      .references(() => family.id, { onDelete: "cascade" }),
+
+    name: text("name").notNull(),
+
+    /** Facultatifs : un second tuteur n'a pas toujours les deux coordonnées. */
+    email: text("email"),
+    phone: text("phone"),
+
+    preferredLanguage: text("preferred_language").notNull(),
+
+    ...timestamps,
+  },
+  (table) => [
+    index("guardian_organization_id_idx").on(table.organizationId),
+    index("guardian_family_id_idx").on(table.familyId),
+    tenantIsolationPolicy("guardian", "organization_id"),
+  ],
+);
+
+/** Le nageur. */
+export const student = pgTable(
+  "student",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    familyId: uuid("family_id")
+      .notNull()
+      .references(() => family.id, { onDelete: "cascade" }),
+
+    firstName: text("first_name").notNull(),
+    lastName: text("last_name").notNull(),
+
+    /**
+     * Obligatoire : détermine le placement par niveau et la classification
+     * COPPA (moins de 13 ans). Sans elle, la conformité prévue en Semaine 12
+     * n'est pas calculable.
+     */
+    dateOfBirth: date("date_of_birth").notNull(),
+
+    /**
+     * `SET NULL` et non `CASCADE` — le seul endroit du schéma où la différence
+     * est critique. Supprimer un niveau ne doit jamais supprimer les enfants
+     * qui l'avaient atteint.
+     */
+    currentLevelId: uuid("current_level_id").references(() => level.id, {
+      onDelete: "set null",
+    }),
+
+    /** Données de santé : champ court, par minimisation (§7 du blueprint). */
+    medicalNotes: text("medical_notes"),
+
+    ...timestamps,
+  },
+  (table) => [
+    index("student_organization_id_idx").on(table.organizationId),
+    index("student_family_id_idx").on(table.familyId),
+    index("student_current_level_id_idx").on(table.currentLevelId),
+    tenantIsolationPolicy("student", "organization_id"),
+  ],
+);
+
 export type Organization = typeof organization.$inferSelect;
 export type NewOrganization = typeof organization.$inferInsert;
 export type StaffUser = typeof staffUser.$inferSelect;
@@ -271,3 +387,9 @@ export type Level = typeof level.$inferSelect;
 export type NewLevel = typeof level.$inferInsert;
 export type Skill = typeof skill.$inferSelect;
 export type NewSkill = typeof skill.$inferInsert;
+export type Family = typeof family.$inferSelect;
+export type NewFamily = typeof family.$inferInsert;
+export type Guardian = typeof guardian.$inferSelect;
+export type NewGuardian = typeof guardian.$inferInsert;
+export type Student = typeof student.$inferSelect;
+export type NewStudent = typeof student.$inferInsert;

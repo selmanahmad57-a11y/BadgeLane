@@ -180,6 +180,32 @@ exempté de ses propres politiques.
 Aucun fichier TypeScript à modifier. Le sens d'écriture (LTR/RTL) est déduit des
 données CLDR du moteur JavaScript, donc correct d'emblée pour l'arabe ou l'hébreu.
 
+Aucun fichier TypeScript à modifier.
+
+---
+
+## Le cache de développement, et comment le reconnaître
+
+Deux symptômes déroutants viennent du **cache du serveur de développement**, jamais
+du code. Ils se règlent l'un et l'autre en repartant proprement :
+
+```bash
+rm -rf .next && npm run dev
+```
+
+**Symptôme 1 — `MISSING_MESSAGE` sur une clé qui existe.** Les catalogues sont
+chargés par un import dynamique paramétré par la langue ; c'est ce qui permet
+d'ajouter une langue sans toucher au code, et c'est aussi ce qui empêche
+Turbopack d'invalider le module quand on ajoute une clé.
+
+**Symptôme 2 — des styles manquants sur un composant récent.** Tailwind ne
+regénère pas toujours les utilitaires d'un fichier nouvellement créé.
+
+**Comment trancher en dix secondes :** compare avec le déploiement Vercel, qui
+part toujours d'un cache vierge. Si la production est correcte et le local non,
+c'est le cache — pas la peine de chercher plus loin. `npm run i18n:verify`, qui
+lit les fichiers sur disque, sert au même diagnostic pour les traductions.
+
 ---
 
 ## Reste à faire avant la Semaine 2

@@ -14,6 +14,7 @@ export const routes = {
   signUp: "/sign-up",
   createOrganization: "/create-organization",
   dashboard: "/dashboard",
+  today: "/today",
   families: "/families",
   schedule: "/schedule",
   terms: "/terms",
@@ -41,6 +42,7 @@ export type AppRoute = (typeof routes)[keyof typeof routes];
 export const AUTHENTICATED_ROUTES: readonly AppRoute[] = [
   routes.createOrganization,
   routes.dashboard,
+  routes.today,
   routes.families,
   routes.schedule,
   routes.terms,
@@ -55,6 +57,7 @@ export const AUTHENTICATED_ROUTES: readonly AppRoute[] = [
  */
 export const ORGANIZATION_SCOPED_ROUTES: readonly AppRoute[] = [
   routes.dashboard,
+  routes.today,
   routes.families,
   routes.schedule,
   routes.terms,
@@ -66,6 +69,7 @@ export const ORGANIZATION_SCOPED_ROUTES: readonly AppRoute[] = [
 /** Entrées de la navigation principale de la console d'administration. */
 export const CONSOLE_NAVIGATION = [
   { route: routes.dashboard, messageKey: "dashboard" },
+  { route: routes.today, messageKey: "today" },
   { route: routes.families, messageKey: "families" },
   { route: routes.schedule, messageKey: "schedule" },
   { route: routes.terms, messageKey: "terms" },

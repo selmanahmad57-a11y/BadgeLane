@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 import { routes } from "@/config/routes";
@@ -15,6 +15,7 @@ import {
 } from "@/config/scheduling";
 import { FIELD_LIMITS } from "@/config/validation";
 import {
+  attendance,
   classOccurrence,
   klass,
   level,
@@ -411,18 +412,28 @@ export async function regenerateOccurrences(
         );
       }
 
+      /**
+       * Chaque séance est accompagnée du nombre de présences relevées. C'est
+       * ce décompte qui alimente `hasDependencies` — voir plus bas.
+       */
       const existing = await tx
         .select({
           date: classOccurrence.date,
           status: classOccurrence.status,
+          attendanceCount: count(attendance.id),
         })
         .from(classOccurrence)
+        .leftJoin(
+          attendance,
+          eq(attendance.classOccurrenceId, classOccurrence.id),
+        )
         .where(
           and(
             eq(classOccurrence.organizationId, context.organizationId),
             eq(classOccurrence.klassId, klassId),
           ),
-        );
+        )
+        .groupBy(classOccurrence.id, classOccurrence.date, classOccurrence.status);
 
       const plan = planOccurrenceReconciliation({
         targetDates,
@@ -430,14 +441,15 @@ export async function regenerateOccurrences(
           date: entry.date,
           status: entry.status,
           /**
-           * ⚠️ POINT D'EXTENSION SEMAINE 6 — présences.
+           * La garde posée en Semaine 4 entre en service.
            *
-           * Dès que la table de présence existera, ce champ devra refléter
-           * l'existence d'une ligne rattachée à la séance. Il vaut `false`
-           * aujourd'hui parce qu'aucune donnée ne peut encore exister, pas
-           * parce que la question serait sans objet.
+           * Une séance dont l'appel a été fait porte une trace : raccourcir la
+           * session ne peut plus l'effacer, même si elle sort de l'intervalle.
+           * Le comportement était écrit — et testé par
+           * `npm run scheduling:verify` — deux semaines avant que la donnée
+           * qu'il protège n'existe.
            */
-          hasDependencies: false,
+          hasDependencies: entry.attendanceCount > 0,
         })),
         /** « Aujourd'hui » dans le fuseau de l'école, jamais celui du serveur. */
         today: todayInTimeZone(row.timezone),

@@ -31,7 +31,8 @@
     "locations": "Sedes",
     "staff": "Personal",
     "schedule": "Horario",
-    "terms": "Periodos"
+    "terms": "Periodos",
+    "today": "Hoy"
   },
   "families": {
     "heading": "Familias",
@@ -258,5 +259,20 @@
     "emailInvalid": "Esa dirección de correo no parece válida.",
     "invitationRejected": "Esta dirección ya ha sido invitada o ya pertenece a la escuela.",
     "tooManyOccurrences": "Este periodo crearía {count} sesiones, por encima del límite de {limit}. Revisa sus fechas."
+  },
+  "today": {
+    "heading": "Hoy en la piscina",
+    "intro": "Todas las sesiones de hoy. Un toque por nadador: los toques se guardan aunque se caiga la red.",
+    "date": "Fecha",
+    "showDate": "Ver este día",
+    "present": "Presente",
+    "absent": "Ausente",
+    "excused": "Justificado",
+    "noStudents": "Nadie inscrito en esta sesión.",
+    "noSessionsHeading": "Sin sesiones",
+    "noSessionsBody": "No hay nada programado para el {date}, o las sesiones se han cancelado.",
+    "allSaved": "Todo guardado.",
+    "saving": "{count, plural, one {Guardando # cambio…} other {Guardando # cambios…}}",
+    "offlinePending": "{count, plural, one {Sin conexión — # cambio pendiente} other {Sin conexión — # cambios pendientes}}. Se enviarán cuando vuelva la red; puedes seguir marcando."
   }
 }

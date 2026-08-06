@@ -18,6 +18,7 @@ import {
 
 import { TENANT_CONTEXT_SETTING } from "@/config/database";
 import { STAFF_ROLES } from "@/config/roles";
+import { ATTENDANCE_STATUSES } from "@/config/attendance";
 import { ENROLLMENT_STATUSES } from "@/config/enrollment";
 import { OCCURRENCE_STATUSES } from "@/config/scheduling";
 
@@ -571,6 +572,66 @@ export const enrollment = pgTable(
   ],
 );
 
+export const attendanceStatusEnum = pgEnum(
+  "attendance_status",
+  ATTENDANCE_STATUSES,
+);
+
+/**
+ * L'appel : qui était là, à quelle séance.
+ *
+ * L'unicité par (séance, élève) n'est pas une commodité mais la condition de
+ * l'app coach : elle transforme chaque envoi en `upsert`, donc en opération
+ * rejouable sans risque. C'est elle qui rend sûre la file locale du bord du
+ * bassin — sans elle, une reconnexion produirait des doublons, et une file
+ * qu'on ne peut pas retenter ne sert à rien.
+ *
+ * `marked_by` est toujours la session qui écrit, jamais une identité affirmée
+ * par le navigateur : la file est cloisonnée par membre, l'attribution est donc
+ * correcte par construction.
+ */
+export const attendance = pgTable(
+  "attendance",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    classOccurrenceId: uuid("class_occurrence_id")
+      .notNull()
+      .references(() => classOccurrence.id, { onDelete: "cascade" }),
+    studentId: uuid("student_id")
+      .notNull()
+      .references(() => student.id, { onDelete: "cascade" }),
+
+    status: attendanceStatusEnum("status").notNull(),
+
+    /**
+     * Auteur du relevé. `SET NULL` : le départ d'un coach ne doit pas effacer
+     * les appels qu'il a faits — l'information « quelqu'un a relevé cette
+     * présence » survit à la personne.
+     */
+    markedBy: uuid("marked_by").references(() => staffUser.id, {
+      onDelete: "set null",
+    }),
+    markedAt: timestamp("marked_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("attendance_occurrence_student_key").on(
+      table.organizationId,
+      table.classOccurrenceId,
+      table.studentId,
+    ),
+    index("attendance_organization_id_idx").on(table.organizationId),
+    index("attendance_occurrence_idx").on(table.classOccurrenceId),
+    tenantIsolationPolicy("attendance", "organization_id"),
+  ],
+);
+
 export type Organization = typeof organization.$inferSelect;
 export type NewOrganization = typeof organization.$inferInsert;
 export type StaffUser = typeof staffUser.$inferSelect;
@@ -597,3 +658,5 @@ export type ClassOccurrence = typeof classOccurrence.$inferSelect;
 export type NewClassOccurrence = typeof classOccurrence.$inferInsert;
 export type Enrollment = typeof enrollment.$inferSelect;
 export type NewEnrollment = typeof enrollment.$inferInsert;
+export type Attendance = typeof attendance.$inferSelect;
+export type NewAttendance = typeof attendance.$inferInsert;

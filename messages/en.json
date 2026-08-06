@@ -31,7 +31,8 @@
     "locations": "Locations",
     "staff": "Staff",
     "schedule": "Schedule",
-    "terms": "Terms"
+    "terms": "Terms",
+    "today": "Today"
   },
   "families": {
     "heading": "Families",
@@ -258,5 +259,20 @@
     "emailInvalid": "That email address does not look valid.",
     "invitationRejected": "This address has already been invited, or already belongs to the school.",
     "tooManyOccurrences": "This term would create {count} sessions, above the limit of {limit}. Check its dates."
+  },
+  "today": {
+    "heading": "Today at the pool",
+    "intro": "Every session running today. Tap once per swimmer — taps are saved even if the network drops.",
+    "date": "Date",
+    "showDate": "Show this day",
+    "present": "Present",
+    "absent": "Absent",
+    "excused": "Excused",
+    "noStudents": "Nobody enrolled for this session.",
+    "noSessionsHeading": "No sessions",
+    "noSessionsBody": "Nothing is scheduled for {date} — or the sessions have been cancelled.",
+    "allSaved": "Everything saved.",
+    "saving": "{count, plural, one {Saving # change…} other {Saving # changes…}}",
+    "offlinePending": "{count, plural, one {Offline — # change waiting} other {Offline — # changes waiting}}. They will be sent when the network returns; you can keep marking."
   }
 }

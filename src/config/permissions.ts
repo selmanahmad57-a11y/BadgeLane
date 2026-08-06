@@ -22,14 +22,16 @@ export const CAPABILITIES = [
   "family:write",
   /** Gérer les sessions, les cours et leurs séances. */
   "schedule:write",
+  /** Relever la présence au bord du bassin. */
+  "attendance:write",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
 
 /**
- * Le coach n'apparaît dans aucune liste : il consulte le curriculum et les
- * lieux depuis l'application coach, mais ne les modifie pas. C'est la
- * répartition décrite au §4 du blueprint.
+ * La matrice des droits. Toute modification ici doit être répercutée dans
+ * `scripts/authz-verify.ts`, qui affirme la matrice attendue explicitement :
+ * élargir un rôle sans le vouloir devient alors impossible en silence.
  */
 const CAPABILITIES_BY_ROLE: Readonly<Record<StaffRole, readonly Capability[]>> =
   {
@@ -39,6 +41,7 @@ const CAPABILITIES_BY_ROLE: Readonly<Record<StaffRole, readonly Capability[]>> =
       "staff:manage",
       "family:write",
       "schedule:write",
+      "attendance:write",
     ],
     admin: [
       "curriculum:write",
@@ -46,13 +49,19 @@ const CAPABILITIES_BY_ROLE: Readonly<Record<StaffRole, readonly Capability[]>> =
       "staff:manage",
       "family:write",
       "schedule:write",
+      "attendance:write",
     ],
     /**
-     * Le coach consulte familles et élèves depuis le bord du bassin — il a
-     * besoin de savoir qui il encadre, et de lire les notes médicales. Il ne
-     * les modifie pas : la fiche d'un enfant est tenue par l'administration.
+     * Le coach écrit une seule chose : la présence. C'est son geste, celui que
+     * personne d'autre ne peut faire à sa place, et il l'accomplit au bord du
+     * bassin sans accès à un bureau.
+     *
+     * Tout le reste lui reste en lecture — il a besoin de savoir qui il
+     * encadre et de lire les notes médicales, pas de tenir les fiches. Cette
+     * unique ouverture est vérifiée par `npm run authz:verify` : la porte doit
+     * s'ouvrir d'un cran, pas en grand.
      */
-    coach: [],
+    coach: ["attendance:write"],
   };
 
 export function can(role: StaffRole, capability: Capability): boolean {

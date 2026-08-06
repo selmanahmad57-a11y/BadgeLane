@@ -42,6 +42,12 @@ export async function generateMetadata({
     metadataBase: new URL(clientEnv.NEXT_PUBLIC_APP_URL),
     title: { default: t("title"), template: t("titleTemplate") },
     description: t("description"),
+    /**
+     * Rend l'application installable sur la tablette du bord du bassin :
+     * plein écran, sans barre d'adresse. Pas de service worker — l'ouverture
+     * à froid hors-ligne reste hors périmètre.
+     */
+    manifest: "/manifest.webmanifest",
   };
 }
 

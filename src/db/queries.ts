@@ -1,14 +1,27 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, ilike, inArray, notInArray, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  notInArray,
+  or,
+} from "drizzle-orm";
 
+import type { AttendanceStatus } from "@/config/attendance";
 import {
   LIVE_ENROLLMENT_STATUSES,
   type EnrollmentStatus,
 } from "@/config/enrollment";
 
 import { WAITLIST_RANK } from "./enrollment";
+import { rosterWindowCondition } from "./roster";
 import {
+  attendance,
   classOccurrence,
   enrollment,
   family,
@@ -635,6 +648,127 @@ export async function getStudentEnrolments(
       )
       .orderBy(asc(enrollment.status), asc(klass.title)),
   );
+}
+
+export type AttendanceRosterEntry = {
+  studentId: string;
+  studentName: string;
+  medicalNotes: string | null;
+  status: AttendanceStatus | null;
+};
+
+export type CoachSession = {
+  occurrenceId: string;
+  klassId: string;
+  title: string;
+  startTime: string;
+  durationMin: number;
+  levelName: string;
+  levelColor: string;
+  locationName: string;
+  instructorId: string | null;
+  roster: AttendanceRosterEntry[];
+};
+
+/**
+ * Séances du jour, avec leur feuille de présence.
+ *
+ * ── La feuille est datée, pas « actuelle » ───────────────────────────────────
+ *
+ * Le roster d'une séance est la liste des élèves **inscrits à cette date-là**,
+ * pas des élèves inscrits aujourd'hui. La différence compte dès qu'on rattrape
+ * un appel oublié : un enfant parti depuis doit figurer sur la feuille de la
+ * semaine dernière, et un enfant arrivé lundi ne doit pas apparaître sur celle
+ * de la semaine précédente.
+ *
+ * D'où le filtre sur la fenêtre `[start_date, end_date]` de l'inscription
+ * plutôt que sur son statut courant. Les inscriptions en liste d'attente sont
+ * exclues : elles n'ont jamais commencé.
+ *
+ * Les séances annulées n'apparaissent pas — une séance qui n'a pas eu lieu n'a
+ * pas de présence à relever.
+ */
+export async function getSessionsForDate(
+  organizationId: string,
+  date: string,
+): Promise<CoachSession[]> {
+  return withTenant(organizationId, async (tx) => {
+    const sessions = await tx
+      .select({
+        occurrenceId: classOccurrence.id,
+        klassId: klass.id,
+        title: klass.title,
+        startTime: klass.startTime,
+        durationMin: klass.durationMin,
+        levelName: level.name,
+        levelColor: level.color,
+        locationName: location.name,
+        instructorId: klass.instructorId,
+      })
+      .from(classOccurrence)
+      .innerJoin(klass, eq(klass.id, classOccurrence.klassId))
+      .innerJoin(level, eq(level.id, klass.levelId))
+      .innerJoin(location, eq(location.id, klass.locationId))
+      .where(
+        and(
+          eq(classOccurrence.organizationId, organizationId),
+          eq(classOccurrence.date, date),
+          eq(classOccurrence.status, "scheduled"),
+        ),
+      )
+      .orderBy(asc(klass.startTime), asc(klass.title));
+
+    if (sessions.length === 0) return [];
+
+    const klassIds = sessions.map((entry) => entry.klassId);
+    const occurrenceIds = sessions.map((entry) => entry.occurrenceId);
+
+    const [enrolled, marked] = await Promise.all([
+      tx
+        .select({
+          klassId: enrollment.klassId,
+          studentId: student.id,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          medicalNotes: student.medicalNotes,
+        })
+        .from(enrollment)
+        .innerJoin(student, eq(student.id, enrollment.studentId))
+        /** Condition extraite dans `roster.ts` pour être éprouvée telle quelle. */
+        .where(rosterWindowCondition(organizationId, klassIds, date))
+        .orderBy(asc(student.firstName), asc(student.lastName)),
+      tx
+        .select({
+          occurrenceId: attendance.classOccurrenceId,
+          studentId: attendance.studentId,
+          status: attendance.status,
+        })
+        .from(attendance)
+        .where(
+          and(
+            eq(attendance.organizationId, organizationId),
+            inArray(attendance.classOccurrenceId, occurrenceIds),
+          ),
+        ),
+    ]);
+
+    const markedByKey = new Map(
+      marked.map((row) => [`${row.occurrenceId}:${row.studentId}`, row.status]),
+    );
+
+    return sessions.map((session) => ({
+      ...session,
+      roster: enrolled
+        .filter((row) => row.klassId === session.klassId)
+        .map((row) => ({
+          studentId: row.studentId,
+          studentName: `${row.firstName} ${row.lastName}`,
+          medicalNotes: row.medicalNotes,
+          status:
+            markedByKey.get(`${session.occurrenceId}:${row.studentId}`) ?? null,
+        })),
+    }));
+  });
 }
 
 /**

@@ -20,6 +20,8 @@ export const CAPABILITIES = [
   "staff:manage",
   /** Créer, modifier, supprimer familles, tuteurs et élèves. */
   "family:write",
+  /** Gérer les sessions, les cours et leurs séances. */
+  "schedule:write",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -36,12 +38,14 @@ const CAPABILITIES_BY_ROLE: Readonly<Record<StaffRole, readonly Capability[]>> =
       "location:write",
       "staff:manage",
       "family:write",
+      "schedule:write",
     ],
     admin: [
       "curriculum:write",
       "location:write",
       "staff:manage",
       "family:write",
+      "schedule:write",
     ],
     /**
      * Le coach consulte familles et élèves depuis le bord du bassin — il a

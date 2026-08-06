@@ -1,24 +1,30 @@
 import "server-only";
 
-import { and, asc, count, eq, ilike, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, or } from "drizzle-orm";
 
 import {
+  classOccurrence,
   family,
   guardian,
+  klass,
   level,
   location,
   program,
   skill,
   staffUser,
   student,
+  term,
+  type ClassOccurrence,
   type Family,
   type Guardian,
+  type Klass,
   type Level,
   type Location,
   type Program,
   type Skill,
   type StaffUser,
   type Student,
+  type Term,
 } from "./schema";
 import { withTenant } from "./tenant";
 
@@ -279,6 +285,185 @@ export async function getLevelOptions(
       .where(eq(level.organizationId, organizationId))
       .orderBy(asc(program.name), asc(level.sortOrder)),
   );
+}
+
+export type TermRecord = Term & { klassCount: number };
+
+export async function getTerms(organizationId: string): Promise<TermRecord[]> {
+  return withTenant(organizationId, async (tx) => {
+    const [terms, counts] = await Promise.all([
+      tx
+        .select()
+        .from(term)
+        .where(eq(term.organizationId, organizationId))
+        .orderBy(desc(term.startDate)),
+      tx
+        .select({ termId: klass.termId, total: count() })
+        .from(klass)
+        .where(eq(klass.organizationId, organizationId))
+        .groupBy(klass.termId),
+    ]);
+
+    const byTerm = new Map(counts.map((row) => [row.termId, row.total]));
+
+    return terms.map((entry) => ({
+      ...entry,
+      klassCount: byTerm.get(entry.id) ?? 0,
+    }));
+  });
+}
+
+export type ScheduledClass = Klass & {
+  programName: string;
+  levelName: string;
+  levelColor: string;
+  locationName: string;
+  instructorName: string | null;
+  termName: string;
+  occurrenceCount: number;
+};
+
+/**
+ * Classes d'une session, enrichies de tout ce que la grille affiche.
+ *
+ * Une seule requête jointe plutôt qu'un aller-retour par classe : la grille
+ * montre l'ensemble de la semaine d'un coup.
+ */
+export async function getScheduledClasses(
+  organizationId: string,
+  termId: string,
+): Promise<ScheduledClass[]> {
+  return withTenant(organizationId, async (tx) => {
+    const rows = await tx
+      .select({
+        klass,
+        programName: program.name,
+        levelName: level.name,
+        levelColor: level.color,
+        locationName: location.name,
+        instructorName: staffUser.fullName,
+        instructorEmail: staffUser.email,
+        termName: term.name,
+      })
+      .from(klass)
+      .innerJoin(program, eq(program.id, klass.programId))
+      .innerJoin(level, eq(level.id, klass.levelId))
+      .innerJoin(location, eq(location.id, klass.locationId))
+      .innerJoin(term, eq(term.id, klass.termId))
+      .leftJoin(staffUser, eq(staffUser.id, klass.instructorId))
+      .where(
+        and(eq(klass.organizationId, organizationId), eq(klass.termId, termId)),
+      )
+      .orderBy(asc(klass.dayOfWeek), asc(klass.startTime));
+
+    if (rows.length === 0) return [];
+
+    const counts = await tx
+      .select({ klassId: classOccurrence.klassId, total: count() })
+      .from(classOccurrence)
+      .where(eq(classOccurrence.organizationId, organizationId))
+      .groupBy(classOccurrence.klassId);
+
+    const byKlass = new Map(counts.map((row) => [row.klassId, row.total]));
+
+    return rows.map((row) => ({
+      ...row.klass,
+      programName: row.programName,
+      levelName: row.levelName,
+      levelColor: row.levelColor,
+      locationName: row.locationName,
+      /** Un coach sans nom renseigné reste identifiable par son adresse. */
+      instructorName: row.instructorName ?? row.instructorEmail ?? null,
+      termName: row.termName,
+      occurrenceCount: byKlass.get(row.klass.id) ?? 0,
+    }));
+  });
+}
+
+export async function getOccurrences(
+  organizationId: string,
+  klassId: string,
+): Promise<ClassOccurrence[]> {
+  return withTenant(organizationId, (tx) =>
+    tx
+      .select()
+      .from(classOccurrence)
+      .where(
+        and(
+          eq(classOccurrence.organizationId, organizationId),
+          eq(classOccurrence.klassId, klassId),
+        ),
+      )
+      .orderBy(asc(classOccurrence.date)),
+  );
+}
+
+/** Membres pouvant encadrer un cours : tout membre actif de l'école. */
+export async function getInstructorOptions(
+  organizationId: string,
+): Promise<{ id: string; label: string }[]> {
+  return withTenant(organizationId, async (tx) => {
+    const rows = await tx
+      .select({
+        id: staffUser.id,
+        fullName: staffUser.fullName,
+        email: staffUser.email,
+      })
+      .from(staffUser)
+      .where(
+        and(
+          eq(staffUser.organizationId, organizationId),
+          eq(staffUser.active, true),
+        ),
+      )
+      .orderBy(asc(staffUser.email));
+
+    return rows.map((row) => ({ id: row.id, label: row.fullName ?? row.email }));
+  });
+}
+
+export async function getLocationOptions(
+  organizationId: string,
+): Promise<{ id: string; name: string }[]> {
+  return withTenant(organizationId, (tx) =>
+    tx
+      .select({ id: location.id, name: location.name })
+      .from(location)
+      .where(eq(location.organizationId, organizationId))
+      .orderBy(asc(location.name)),
+  );
+}
+
+/**
+ * Nombre de cours référençant une ressource du curriculum ou un lieu.
+ *
+ * Les clés étrangères du planning sont en `ON DELETE restrict` : supprimer un
+ * niveau encore programmé échouerait par violation de contrainte, message
+ * illisible à l'appui. Ce compte permet de refuser proprement, avec une
+ * explication.
+ */
+export async function countClassesUsing(
+  organizationId: string,
+  reference:
+    | { programId: string }
+    | { levelId: string }
+    | { locationId: string },
+): Promise<number> {
+  return withTenant(organizationId, async (tx) => {
+    const condition =
+      "programId" in reference
+        ? eq(klass.programId, reference.programId)
+        : "levelId" in reference
+          ? eq(klass.levelId, reference.levelId)
+          : eq(klass.locationId, reference.locationId);
+
+    const [row] = await tx
+      .select({ total: count() })
+      .from(klass)
+      .where(and(eq(klass.organizationId, organizationId), condition));
+
+    return row?.total ?? 0;
+  });
 }
 
 /**

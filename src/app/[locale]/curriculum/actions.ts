@@ -9,6 +9,7 @@ import {
   FIELD_LIMITS,
   SORT_ORDER_STEP,
 } from "@/config/validation";
+import { countClassesUsing } from "@/db/queries";
 import { level, program, skill } from "@/db/schema";
 import { withTenant, type TenantTransaction } from "@/db/tenant";
 import { assertBelongsToTenant } from "@/db/tenant-guard";
@@ -109,6 +110,21 @@ export async function deleteProgram(formData: FormData): Promise<ActionResult> {
   return runAuthorizedAction("curriculum:write", async (context) => {
     const programId = requiredUuid(formData, "programId");
 
+    /**
+     * Un programme encore au planning ne se supprime pas.
+     *
+     * La clé étrangère `klass.program_id` est en `ON DELETE restrict` : sans ce
+     * contrôle, Postgres refuserait de lui-même, mais par une violation de
+     * contrainte illisible. Mieux vaut un refus expliqué qu'une erreur brute.
+     */
+    if (
+      (await countClassesUsing(context.organizationId, { programId })) > 0
+    ) {
+      throw new ValidationError(
+        "Ce programme est utilisé par des cours au planning.",
+      );
+    }
+
     /** Les niveaux et compétences suivent, par cascade déclarée au schéma. */
     await withTenant(context.organizationId, (tx) =>
       tx
@@ -180,6 +196,12 @@ export async function updateLevel(formData: FormData): Promise<ActionResult> {
 export async function deleteLevel(formData: FormData): Promise<ActionResult> {
   return runAuthorizedAction("curriculum:write", async (context) => {
     const levelId = requiredUuid(formData, "levelId");
+
+    if ((await countClassesUsing(context.organizationId, { levelId })) > 0) {
+      throw new ValidationError(
+        "Ce niveau est utilisé par des cours au planning.",
+      );
+    }
 
     await withTenant(context.organizationId, (tx) =>
       tx

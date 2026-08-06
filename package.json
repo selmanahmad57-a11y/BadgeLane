@@ -14,7 +14,8 @@
     "db:studio": "drizzle-kit studio",
     "db:verify": "tsx scripts/db-verify.ts",
     "db:seed": "tsx scripts/db-seed.ts",
-    "i18n:verify": "tsx scripts/i18n-verify.ts"
+    "i18n:verify": "tsx scripts/i18n-verify.ts",
+    "scheduling:verify": "tsx scripts/scheduling-verify.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

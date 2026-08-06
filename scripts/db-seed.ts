@@ -6,14 +6,19 @@ import ws from "ws";
 
 import { TENANT_CONTEXT_SETTING } from "../src/config/database";
 import { SORT_ORDER_STEP } from "../src/config/validation";
+import { occurrenceDatesFor } from "../src/lib/occurrences";
 import {
+  classOccurrence,
   family,
   guardian,
+  klass,
   level,
+  location,
   organization,
   program,
   skill,
   student,
+  term,
 } from "../src/db/schema";
 
 /**
@@ -69,6 +74,18 @@ const DEMO = {
       skills: ["Swims 15 metres front crawl", "Treads water for 30 seconds"],
     },
   ],
+  term: {
+    name: `${DEMO_PREFIX}Fall 2026`,
+    startDate: "2026-09-01",
+    /** Traverse volontairement le changement d'heure du 1er novembre. */
+    endDate: "2026-12-15",
+  },
+  classes: [
+    { title: `${DEMO_PREFIX}Tuesday Guppies`, levelName: "Guppy", dayOfWeek: 2, startTime: "17:00", durationMin: 30, capacity: 8 },
+    { title: `${DEMO_PREFIX}Thursday Minnows`, levelName: "Minnow", dayOfWeek: 4, startTime: "17:45", durationMin: 45, capacity: 6 },
+    { title: `${DEMO_PREFIX}Saturday Dolphins`, levelName: "Dolphin", dayOfWeek: 6, startTime: "10:00", durationMin: 45, capacity: 10 },
+  ],
+  location: { name: `${DEMO_PREFIX}Main pool` },
   family: {
     primaryGuardianName: `${DEMO_PREFIX}Rivera household`,
     email: `demo.rivera@${DEMO_DOMAIN}`,
@@ -157,6 +174,17 @@ async function purgeOrganization(
       )
       .returning({ id: family.id });
 
+    /** L'ordre compte : les cours référencent programme et lieu en `restrict`. */
+    const removedTerms = await tx
+      .delete(term)
+      .where(
+        and(
+          eq(term.organizationId, organizationId),
+          eq(term.name, DEMO.term.name),
+        ),
+      )
+      .returning({ id: term.id });
+
     const removedPrograms = await tx
       .delete(program)
       .where(
@@ -167,11 +195,23 @@ async function purgeOrganization(
       )
       .returning({ id: program.id });
 
+    const removedLocations = await tx
+      .delete(location)
+      .where(
+        and(
+          eq(location.organizationId, organizationId),
+          eq(location.name, DEMO.location.name),
+        ),
+      )
+      .returning({ id: location.id });
+
     console.log(
       [
         "Données de démonstration retirées :",
         `  ${removedFamilies.length} famille(s) — tuteurs et élèves compris`,
+        `  ${removedTerms.length} session(s) — cours et séances compris`,
         `  ${removedPrograms.length} programme(s) — niveaux et compétences compris`,
+        `  ${removedLocations.length} lieu(x)`,
       ].join("\n"),
     );
 
@@ -257,14 +297,17 @@ async function seedOrganization(
       )
       .limit(1);
 
-    if (existing) {
-      console.log(
-        "Les données de démonstration sont déjà présentes. Rien à faire.",
-      );
-      return 0;
-    }
-
-    const [createdFamily] = await tx
+    /**
+     * Chaque bloc est vérifié séparément.
+     *
+     * Une sentinelle unique — la famille, par exemple — bloquerait tout ajout
+     * ultérieur au seed : les données d'une semaine passée empêcheraient
+     * celles de la suivante d'être créées. Chaque ensemble porte donc son
+     * propre contrôle d'existence.
+     */
+    const [createdFamily] = existing
+      ? [existing]
+      : await tx
       .insert(family)
       .values({
         organizationId,
@@ -275,7 +318,8 @@ async function seedOrganization(
       })
       .returning();
 
-    await tx.insert(guardian).values(
+    if (!existing) {
+      await tx.insert(guardian).values(
       DEMO.guardians.map((entry) => ({
         organizationId,
         familyId: createdFamily.id,
@@ -283,7 +327,8 @@ async function seedOrganization(
         email: entry.email,
         preferredLanguage,
       })),
-    );
+      );
+    }
 
     /**
      * Curriculum de démonstration, créé seulement s'il n'existe pas déjà.
@@ -347,7 +392,102 @@ async function seedOrganization(
       }
     }
 
-    await tx.insert(student).values(
+    /**
+     * Planning de démonstration : une session, un lieu, trois cours
+     * hebdomadaires, et leurs séances générées.
+     *
+     * Les dates de la session traversent volontairement le changement d'heure
+     * du 1er novembre : la démonstration montre donc précisément ce que le
+     * §DST du blueprint demandait de ne pas casser.
+     */
+    const levelsByName = new Map(
+      (
+        await tx
+          .select({ id: level.id, name: level.name, programId: level.programId })
+          .from(level)
+          .where(eq(level.organizationId, organizationId))
+      ).map((row) => [row.name, row]),
+    );
+
+    const [existingTerm] = await tx
+      .select({ id: term.id })
+      .from(term)
+      .where(
+        and(
+          eq(term.organizationId, organizationId),
+          eq(term.name, DEMO.term.name),
+        ),
+      )
+      .limit(1);
+
+    let generatedOccurrences = 0;
+    let createdClasses = 0;
+
+    if (!existingTerm) {
+      const [createdTerm] = await tx
+        .insert(term)
+        .values({
+          organizationId,
+          name: DEMO.term.name,
+          startDate: DEMO.term.startDate,
+          endDate: DEMO.term.endDate,
+          enrollmentOpen: true,
+        })
+        .returning();
+
+      const [createdLocation] = await tx
+        .insert(location)
+        .values({ organizationId, name: DEMO.location.name })
+        .returning();
+
+      for (const entry of DEMO.classes) {
+        const target = levelsByName.get(entry.levelName);
+        /** Sans le niveau correspondant, on saute plutôt que d'inventer. */
+        if (!target) continue;
+
+        const [createdClass] = await tx
+          .insert(klass)
+          .values({
+            organizationId,
+            termId: createdTerm.id,
+            programId: target.programId,
+            levelId: target.id,
+            locationId: createdLocation.id,
+            title: entry.title,
+            dayOfWeek: entry.dayOfWeek,
+            startTime: entry.startTime,
+            durationMin: entry.durationMin,
+            capacity: entry.capacity,
+          })
+          .returning();
+
+        createdClasses += 1;
+
+        const dates = occurrenceDatesFor(
+          DEMO.term.startDate,
+          DEMO.term.endDate,
+          entry.dayOfWeek,
+        );
+
+        if (dates.length > 0) {
+          await tx
+            .insert(classOccurrence)
+            .values(
+              dates.map((date) => ({
+                organizationId,
+                klassId: createdClass.id,
+                date,
+              })),
+            )
+            .onConflictDoNothing();
+
+          generatedOccurrences += dates.length;
+        }
+      }
+    }
+
+    if (!existing) {
+      await tx.insert(student).values(
       DEMO.students.map((entry, index) => ({
         organizationId,
         familyId: createdFamily.id,
@@ -357,7 +497,8 @@ async function seedOrganization(
         /** Seul le premier élève reçoit un niveau, pour montrer les deux cas. */
         currentLevelId: index === 0 ? (firstLevel?.id ?? null) : null,
       })),
-    );
+      );
+    }
 
     console.log(
       [
@@ -368,6 +509,9 @@ async function seedOrganization(
         firstLevel
           ? `  niveau      « ${firstLevel.name} » affecté au premier élève`
           : "  niveau      aucun niveau existant : aucune affectation",
+        existingTerm
+          ? "  planning    déjà présent"
+          : `  planning    « ${DEMO.term.name} », ${createdClasses} cours, ${generatedOccurrences} séances générées`,
         "",
         `Tout est préfixé « ${DEMO_PREFIX.trim()} » et adressé en @${DEMO_DOMAIN} pour être repérable et purgeable.`,
       ].join("\n"),

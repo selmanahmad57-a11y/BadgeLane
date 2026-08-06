@@ -8,7 +8,9 @@ import {
   pgEnum,
   pgPolicy,
   pgTable,
+  smallint,
   text,
+  time,
   timestamp,
   uniqueIndex,
   uuid,
@@ -16,6 +18,7 @@ import {
 
 import { TENANT_CONTEXT_SETTING } from "@/config/database";
 import { STAFF_ROLES } from "@/config/roles";
+import { OCCURRENCE_STATUSES } from "@/config/scheduling";
 
 /**
  * Schéma BadgeLane.
@@ -375,6 +378,139 @@ export const student = pgTable(
   ],
 );
 
+/** Une période d'enseignement : trimestre, saison, session d'été. */
+export const term = pgTable(
+  "term",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+
+    name: text("name").notNull(),
+
+    /**
+     * Dates civiles, sans heure ni fuseau. Une session commence « le
+     * 1er septembre » pour l'école, pas à un instant précis.
+     */
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date").notNull(),
+
+    /** Les inscriptions sont-elles ouvertes ? Fermées par défaut. */
+    enrollmentOpen: boolean("enrollment_open").notNull().default(false),
+
+    ...timestamps,
+  },
+  (table) => [
+    index("term_organization_id_idx").on(table.organizationId),
+    tenantIsolationPolicy("term", "organization_id"),
+  ],
+);
+
+/**
+ * Un cours récurrent. Table `klass` : `class` est un mot réservé.
+ *
+ * `dayOfWeek` et `startTime` décrivent un créneau dans le **calendrier local de
+ * l'école**, jamais un instant. C'est ce choix qui rend le planning insensible
+ * aux changements d'heure : voir `src/lib/occurrences.ts`.
+ */
+export const klass = pgTable(
+  "klass",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+
+    termId: uuid("term_id")
+      .notNull()
+      .references(() => term.id, { onDelete: "cascade" }),
+    programId: uuid("program_id")
+      .notNull()
+      .references(() => program.id, { onDelete: "restrict" }),
+    levelId: uuid("level_id")
+      .notNull()
+      .references(() => level.id, { onDelete: "restrict" }),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => location.id, { onDelete: "restrict" }),
+
+    /**
+     * L'instructeur peut être absent : une classe existe avant d'être
+     * attribuée. `SET NULL` plutôt que cascade — le départ d'un coach ne doit
+     * pas emporter ses cours, seulement les laisser à réattribuer.
+     */
+    instructorId: uuid("instructor_id").references(() => staffUser.id, {
+      onDelete: "set null",
+    }),
+
+    title: text("title").notNull(),
+
+    /** 0 = dimanche, convention alignée sur `getUTCDay()`. */
+    dayOfWeek: smallint("day_of_week").notNull(),
+    /** Heure locale de l'école, format `HH:MM`. */
+    startTime: time("start_time").notNull(),
+    durationMin: integer("duration_min").notNull(),
+    capacity: integer("capacity").notNull(),
+
+    active: boolean("active").notNull().default(true),
+
+    ...timestamps,
+  },
+  (table) => [
+    index("klass_organization_id_idx").on(table.organizationId),
+    index("klass_term_id_idx").on(table.termId),
+    index("klass_instructor_id_idx").on(table.instructorId),
+    tenantIsolationPolicy("klass", "organization_id"),
+  ],
+);
+
+export const occurrenceStatusEnum = pgEnum(
+  "occurrence_status",
+  OCCURRENCE_STATUSES,
+);
+
+/**
+ * Une séance datée. Porte bientôt la présence (Semaine 6) et les compétences
+ * validées (Semaine 7) — d'où la prudence de la réconciliation.
+ *
+ * `date` sans heure : l'heure vit sur la classe. Combinées au fuseau de
+ * l'école, elles donnent l'instant réel, calculé seulement quand il est
+ * nécessaire.
+ */
+export const classOccurrence = pgTable(
+  "class_occurrence",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    klassId: uuid("klass_id")
+      .notNull()
+      .references(() => klass.id, { onDelete: "cascade" }),
+
+    date: date("date").notNull(),
+    status: occurrenceStatusEnum("status").notNull().default("scheduled"),
+
+    ...timestamps,
+  },
+  (table) => [
+    /**
+     * Rend le doublon impossible au niveau base, et non seulement au niveau
+     * code : la génération peut alors insérer sans vérifier, et rester
+     * idempotente même si deux appels se croisent.
+     */
+    uniqueIndex("class_occurrence_klass_date_key").on(
+      table.organizationId,
+      table.klassId,
+      table.date,
+    ),
+    index("class_occurrence_organization_id_idx").on(table.organizationId),
+    index("class_occurrence_date_idx").on(table.date),
+    tenantIsolationPolicy("class_occurrence", "organization_id"),
+  ],
+);
+
 export type Organization = typeof organization.$inferSelect;
 export type NewOrganization = typeof organization.$inferInsert;
 export type StaffUser = typeof staffUser.$inferSelect;
@@ -393,3 +529,9 @@ export type Guardian = typeof guardian.$inferSelect;
 export type NewGuardian = typeof guardian.$inferInsert;
 export type Student = typeof student.$inferSelect;
 export type NewStudent = typeof student.$inferInsert;
+export type Term = typeof term.$inferSelect;
+export type NewTerm = typeof term.$inferInsert;
+export type Klass = typeof klass.$inferSelect;
+export type NewKlass = typeof klass.$inferInsert;
+export type ClassOccurrence = typeof classOccurrence.$inferSelect;
+export type NewClassOccurrence = typeof classOccurrence.$inferInsert;

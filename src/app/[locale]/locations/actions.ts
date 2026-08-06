@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { routes } from "@/config/routes";
 import { FIELD_LIMITS } from "@/config/validation";
+import { countClassesUsing } from "@/db/queries";
 import { location } from "@/db/schema";
 import { withTenant } from "@/db/tenant";
 import type { ActionResult } from "@/lib/action-result";
@@ -13,6 +14,7 @@ import {
   requiredText,
   requiredUuid,
   runAuthorizedAction,
+  ValidationError,
 } from "@/lib/actions";
 
 /** Écritures sur les lieux : bassins et sites où se déroulent les cours. */
@@ -71,6 +73,13 @@ export async function deleteLocation(
 ): Promise<ActionResult> {
   return runAuthorizedAction("location:write", async (context) => {
     const locationId = requiredUuid(formData, "locationId");
+
+    /** Un lieu encore programmé ne se supprime pas : FK en ON DELETE restrict. */
+    if ((await countClassesUsing(context.organizationId, { locationId })) > 0) {
+      throw new ValidationError(
+        "Ce lieu est utilisé par des cours au planning.",
+      );
+    }
 
     await withTenant(context.organizationId, (tx) =>
       tx

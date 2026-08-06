@@ -9,6 +9,7 @@ import { checkTenantIsolation, probeTenantIsolation } from "../src/db/isolation"
 import {
   family,
   level,
+  location,
   organization,
   program,
   student,
@@ -221,6 +222,42 @@ async function probeCrossTenantGuard(
       if (!refused) {
         problems.push(
           "GARDE INOPÉRANTE : assertBelongsToTenant a accepté un niveau appartenant à une autre école.",
+        );
+      }
+
+      /**
+       * Même contrôle sur un lieu : un cours de l'école B ne doit pas pouvoir
+       * être programmé dans le bassin de l'école A. C'est le piège FK/RLS
+       * appliqué au planning.
+       */
+      /**
+       * L'insertion se fait sous le contexte de l'école A : la politique
+       * `WITH CHECK` refuserait d'écrire une ligne d'une autre école — c'est
+       * précisément ce qu'elle doit faire.
+       */
+      await useTenantContext(firstOrganizationId);
+      const [locationA] = await tx
+        .insert(location)
+        .values({ organizationId: firstOrganizationId, name: "probe pool" })
+        .returning();
+      await useTenantContext(secondOrganizationId);
+
+      let locationRefused = false;
+      try {
+        await assertBelongsToTenant(
+          tx,
+          location,
+          "location",
+          locationA.id,
+          secondOrganizationId,
+        );
+      } catch (error) {
+        locationRefused = error instanceof CrossTenantReferenceError;
+      }
+
+      if (!locationRefused) {
+        problems.push(
+          "GARDE INOPÉRANTE : un cours pourrait être programmé dans le bassin d'une autre école.",
         );
       }
 

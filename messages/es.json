@@ -1,0 +1,49 @@
+{
+  "brand": {
+    "name": "BadgeLane",
+    "tagline": "Gestión de escuelas de natación que cobra sola y registra cada insignia."
+  },
+  "metadata": {
+    "title": "BadgeLane",
+    "titleTemplate": "%s · BadgeLane",
+    "description": "Horarios de clases, seguimiento del progreso por habilidades y cobro recurrente automático para escuelas de natación."
+  },
+  "landing": {
+    "heading": "Dirige tu escuela de natación sin perseguir pagos",
+    "body": "Mensualidades que se cobran solas, insignias de progreso que las familias esperan con ganas y un horario que tus instructores manejan desde el borde de la piscina.",
+    "signIn": "Iniciar sesión",
+    "signUp": "Crear una cuenta",
+    "openDashboard": "Abrir el panel"
+  },
+  "auth": {
+    "signInHeading": "Bienvenido de nuevo",
+    "signUpHeading": "Crea tu cuenta de BadgeLane"
+  },
+  "organization": {
+    "createHeading": "Crea tu escuela",
+    "createBody": "La escuela es tu espacio de trabajo: personal, clases, familias y facturación viven dentro de ella."
+  },
+  "dashboard": {
+    "heading": "Panel",
+    "welcome": "Sesión iniciada como {name}",
+    "schoolLabel": "Escuela",
+    "roleLabel": "Tu rol",
+    "timezoneLabel": "Zona horaria",
+    "currencyLabel": "Moneda",
+    "emptyHeading": "Todavía no hay nada que mostrar",
+    "emptyBody": "Tu escuela está conectada y aislada. Los programas, las clases y las familias llegan en las próximas etapas."
+  },
+  "roles": {
+    "owner": "Propietario",
+    "admin": "Administrador",
+    "coach": "Instructor"
+  },
+  "errors": {
+    "notFoundHeading": "Página no encontrada",
+    "notFoundBody": "Esta página no existe o no tienes acceso a ella.",
+    "genericHeading": "Algo salió mal",
+    "genericBody": "El error quedó registrado. Vuelve a intentarlo en un momento.",
+    "retry": "Reintentar",
+    "backHome": "Volver al inicio"
+  }
+}

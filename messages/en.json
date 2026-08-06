@@ -1,0 +1,49 @@
+{
+  "brand": {
+    "name": "BadgeLane",
+    "tagline": "Swim school management that bills itself and tracks every badge."
+  },
+  "metadata": {
+    "title": "BadgeLane",
+    "titleTemplate": "%s · BadgeLane",
+    "description": "Class scheduling, skill-based progress tracking and automatic recurring billing for swim schools."
+  },
+  "landing": {
+    "heading": "Run your swim school without chasing payments",
+    "body": "Recurring tuition that collects itself, skill badges parents actually look forward to, and a schedule your coaches can run from the pool deck.",
+    "signIn": "Sign in",
+    "signUp": "Create an account",
+    "openDashboard": "Open dashboard"
+  },
+  "auth": {
+    "signInHeading": "Welcome back",
+    "signUpHeading": "Create your BadgeLane account"
+  },
+  "organization": {
+    "createHeading": "Create your school",
+    "createBody": "A school is your workspace: staff, classes, families and billing all live inside it."
+  },
+  "dashboard": {
+    "heading": "Dashboard",
+    "welcome": "Signed in as {name}",
+    "schoolLabel": "School",
+    "roleLabel": "Your role",
+    "timezoneLabel": "Time zone",
+    "currencyLabel": "Currency",
+    "emptyHeading": "Nothing to show yet",
+    "emptyBody": "Your school is connected and isolated. Programs, classes and families arrive in the next milestones."
+  },
+  "roles": {
+    "owner": "Owner",
+    "admin": "Administrator",
+    "coach": "Coach"
+  },
+  "errors": {
+    "notFoundHeading": "Page not found",
+    "notFoundBody": "This page does not exist, or you do not have access to it.",
+    "genericHeading": "Something went wrong",
+    "genericBody": "The error has been recorded. Try again in a moment.",
+    "retry": "Try again",
+    "backHome": "Back to home"
+  }
+}

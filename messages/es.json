@@ -33,6 +33,9 @@
     "emptyHeading": "Todavía no hay nada que mostrar",
     "emptyBody": "Tu escuela está conectada y aislada. Los programas, las clases y las familias llegan en las próximas etapas."
   },
+  "localeSwitcher": {
+    "label": "Cambiar de idioma"
+  },
   "roles": {
     "owner": "Propietario",
     "admin": "Administrador",

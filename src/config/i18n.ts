@@ -34,6 +34,27 @@ export function localeFromPathname(pathname: string): Locale | undefined {
   return isSupportedLocale(firstSegment) ? firstSegment : undefined;
 }
 
+/**
+ * Nom d'une langue, écrit dans cette langue même : `en` -> « English »,
+ * `es` -> « Español », `ar` -> « العربية ».
+ *
+ * Les noms proviennent des données CLDR embarquées dans le moteur JavaScript,
+ * jamais d'une table tenue à la main : activer une langue supplémentaire
+ * n'oblige donc à traduire son nom dans aucun fichier.
+ *
+ * L'affichage se fait dans la langue concernée, et non dans celle de la page :
+ * quelqu'un qui ne lit pas l'anglais doit pouvoir reconnaître la sienne.
+ */
+export function languageName(locale: Locale): string {
+  try {
+    return (
+      new Intl.DisplayNames([locale], { type: "language" }).of(locale) ?? locale
+    );
+  } catch {
+    return locale;
+  }
+}
+
 export type TextDirection = "ltr" | "rtl";
 
 /**

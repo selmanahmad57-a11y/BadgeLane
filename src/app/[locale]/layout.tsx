@@ -6,6 +6,7 @@ import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import type { ReactNode } from "react";
 
+import { LocaleSwitcher } from "@/components/locale-switcher";
 import { clientEnv } from "@/config/env.client";
 import { textDirection } from "@/config/i18n";
 import { localizedPath, routes } from "@/config/routes";
@@ -82,7 +83,13 @@ export default async function LocaleLayout({
         suppressHydrationWarning
       >
         <body className="flex min-h-full flex-col">
-          <NextIntlClientProvider>{children}</NextIntlClientProvider>
+          <NextIntlClientProvider>
+            {children}
+            {/* Présent sur toutes les pages, y compris avant connexion. */}
+            <footer className="flex justify-center px-6 py-6">
+              <LocaleSwitcher />
+            </footer>
+          </NextIntlClientProvider>
         </body>
       </html>
     </ClerkProvider>

@@ -33,6 +33,9 @@
     "emptyHeading": "Nothing to show yet",
     "emptyBody": "Your school is connected and isolated. Programs, classes and families arrive in the next milestones."
   },
+  "localeSwitcher": {
+    "label": "Change language"
+  },
   "roles": {
     "owner": "Owner",
     "admin": "Administrator",

@@ -242,5 +242,21 @@
     "student": "Nadador",
     "enroll": "Inscribir",
     "enrollNote": "Si la clase está llena, el nadador pasa a la lista de espera. Las plazas se comprueban bajo bloqueo: dos personas que inscriban a la vez no pueden ocupar ambas la última plaza."
+  },
+  "actionReasons": {
+    "classFull": "Esta clase está llena ({taken}/{capacity}): libera una plaza antes de dar una.",
+    "alreadyEnrolled": "Este nadador ya está inscrito o en la lista de espera de esta clase.",
+    "notWaitlisted": "Esta inscripción no está en lista de espera.",
+    "notInThisSchool": "Ese registro ya no existe o no pertenece a esta escuela.",
+    "termDatesReversed": "La fecha de fin es anterior a la de inicio.",
+    "instructorNotActive": "Ese instructor no es un miembro activo de esta escuela.",
+    "programInUse": "Este programa lo usan clases del horario. Elimina antes esas clases.",
+    "levelInUse": "Este nivel lo usan clases del horario. Elimina antes esas clases.",
+    "locationInUse": "Esta sede la usan clases del horario. Elimina antes esas clases.",
+    "lastOwner": "La escuela se quedaría sin propietario. Asigna antes ese rol a otra persona.",
+    "cannotEditSelf": "No puedes cambiar tu propio acceso. Pídeselo a otro propietario o administrador.",
+    "emailInvalid": "Esa dirección de correo no parece válida.",
+    "invitationRejected": "Esta dirección ya ha sido invitada o ya pertenece a la escuela.",
+    "tooManyOccurrences": "Este periodo crearía {count} sesiones, por encima del límite de {limit}. Revisa sus fechas."
   }
 }

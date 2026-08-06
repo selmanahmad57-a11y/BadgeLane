@@ -68,6 +68,7 @@ async function assertNotLastOwner(
   if ((row?.total ?? 0) <= 1) {
     throw new ValidationError(
       "Cette école n'aurait plus aucun propriétaire actif.",
+      "lastOwner",
     );
   }
 }
@@ -87,6 +88,7 @@ async function loadTargetMember(
      */
     throw new ValidationError(
       "Un membre ne peut pas modifier son propre accès.",
+      "cannotEditSelf",
     );
   }
 
@@ -106,7 +108,10 @@ async function loadTargetMember(
     .limit(1);
 
   if (!member) {
-    throw new ValidationError("Ce membre n'existe pas dans cette école.");
+    throw new ValidationError(
+      "Ce membre n'existe pas dans cette école.",
+      "notInThisSchool",
+    );
   }
 
   return member;
@@ -128,7 +133,10 @@ export async function inviteStaffMember(
     const role = requiredEnum(formData, "role", INVITABLE_STAFF_ROLES);
 
     if (!EMAIL_PATTERN.test(email)) {
-      throw new ValidationError(`Adresse « ${email} » invalide.`);
+      throw new ValidationError(
+        `Adresse « ${email} » invalide.`,
+        "emailInvalid",
+      );
     }
 
     const clerk = await clerkClient();
@@ -148,6 +156,7 @@ export async function inviteStaffMember(
        */
       throw new ValidationError(
         "Clerk a refusé cette invitation (adresse déjà invitée ou déjà membre).",
+        "invitationRejected",
       );
     }
 

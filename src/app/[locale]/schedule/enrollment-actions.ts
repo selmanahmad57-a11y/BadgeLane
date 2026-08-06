@@ -93,6 +93,7 @@ export async function enrollStudent(
       ) {
         throw new ValidationError(
           "Cet élève a déjà une inscription en cours sur ce cours.",
+          "alreadyEnrolled",
         );
       }
 
@@ -139,11 +140,17 @@ export async function promoteEnrollment(
         .limit(1);
 
       if (!target) {
-        throw new ValidationError("Cette inscription n'existe pas.");
+        throw new ValidationError(
+          "Cette inscription n'existe pas.",
+          "notInThisSchool",
+        );
       }
 
       if (target.status !== "waitlisted") {
-        throw new ValidationError("Cette inscription n'est pas en attente.");
+        throw new ValidationError(
+          "Cette inscription n'est pas en attente.",
+          "notWaitlisted",
+        );
       }
 
       const seats = await lockKlassAndCountSeats(
@@ -155,6 +162,8 @@ export async function promoteEnrollment(
       if (!seats.hasSeat) {
         throw new ValidationError(
           `Ce cours est complet (${seats.taken}/${seats.capacity}).`,
+          "classFull",
+          { taken: seats.taken, capacity: seats.capacity },
         );
       }
 

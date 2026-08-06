@@ -8,6 +8,8 @@ import { CrossTenantReferenceError } from "@/db/tenant-guard";
 import {
   actionFailed,
   actionSucceeded,
+  type ActionReason,
+  type ActionReasonValues,
   type ActionResult,
 } from "./action-result";
 import {
@@ -24,12 +26,30 @@ import {
  * contrôle, puisqu'elle ne reçoit son contexte qu'après.
  */
 
-export type { ActionErrorKey, ActionResult } from "./action-result";
+export type {
+  ActionErrorKey,
+  ActionReason,
+  ActionResult,
+} from "./action-result";
 
-/** Rejet d'une saisie. Traduit par un message de formulaire, pas par une panne. */
+/**
+ * Rejet d'une écriture, traduit par un message de formulaire.
+ *
+ * `reason` distingue un **refus métier** — classe pleine, dernier propriétaire —
+ * d'une simple **saisie malformée**. Le premier mérite un message qui dit quoi
+ * faire ; la seconde garde le message générique, puisqu'elle ne survient qu'en
+ * contournant la validation du navigateur.
+ *
+ * Le message passé en premier argument reste en français et ne sort jamais du
+ * serveur : il part dans les journaux, pas à l'écran.
+ */
 export class ValidationError extends Error {
-  constructor(reason: string) {
-    super(reason);
+  constructor(
+    message: string,
+    readonly reason?: ActionReason,
+    readonly reasonValues?: ActionReasonValues,
+  ) {
+    super(message);
     this.name = "ValidationError";
   }
 }
@@ -66,16 +86,16 @@ export async function runAuthorizedAction(
     return actionSucceeded;
   } catch (error) {
     if (error instanceof ValidationError) {
-      return actionFailed("invalid");
+      return actionFailed("invalid", error.reason, error.reasonValues);
     }
 
     /**
-     * Une référence vers une autre école est traitée comme une saisie
-     * invalide, et non comme un refus explicite : répondre « interdit »
+     * Une référence vers une autre école est présentée comme une ligne
+     * introuvable, et non comme un refus explicite : répondre « interdit »
      * confirmerait à qui sonde des identifiants que la ligne existe ailleurs.
      */
     if (error instanceof CrossTenantReferenceError) {
-      return actionFailed("invalid");
+      return actionFailed("invalid", "notInThisSchool");
     }
 
     throw error;

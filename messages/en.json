@@ -242,5 +242,21 @@
     "student": "Swimmer",
     "enroll": "Enrol",
     "enrollNote": "If the class is full, the swimmer joins the waiting list instead. The seat count is checked under a lock, so two people enrolling at the same moment cannot both take the last place."
+  },
+  "actionReasons": {
+    "classFull": "This class is full ({taken}/{capacity}) — free a place before giving one.",
+    "alreadyEnrolled": "This swimmer is already enrolled or on the waiting list for this class.",
+    "notWaitlisted": "This enrolment is not on the waiting list.",
+    "notInThisSchool": "That record no longer exists, or does not belong to this school.",
+    "termDatesReversed": "The end date comes before the start date.",
+    "instructorNotActive": "That instructor is not an active member of this school.",
+    "programInUse": "This program is used by classes on the schedule. Delete those classes first.",
+    "levelInUse": "This level is used by classes on the schedule. Delete those classes first.",
+    "locationInUse": "This location is used by classes on the schedule. Delete those classes first.",
+    "lastOwner": "This school would be left without an owner. Give someone else the owner role first.",
+    "cannotEditSelf": "You cannot change your own access. Ask another owner or administrator.",
+    "emailInvalid": "That email address does not look valid.",
+    "invitationRejected": "This address has already been invited, or already belongs to the school.",
+    "tooManyOccurrences": "This term would create {count} sessions, above the limit of {limit}. Check its dates."
   }
 }

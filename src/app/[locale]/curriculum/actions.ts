@@ -122,6 +122,7 @@ export async function deleteProgram(formData: FormData): Promise<ActionResult> {
     ) {
       throw new ValidationError(
         "Ce programme est utilisé par des cours au planning.",
+        "programInUse",
       );
     }
 
@@ -200,6 +201,7 @@ export async function deleteLevel(formData: FormData): Promise<ActionResult> {
     if ((await countClassesUsing(context.organizationId, { levelId })) > 0) {
       throw new ValidationError(
         "Ce niveau est utilisé par des cours au planning.",
+        "levelInUse",
       );
     }
 

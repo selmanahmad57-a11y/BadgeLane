@@ -78,6 +78,7 @@ export async function deleteLocation(
     if ((await countClassesUsing(context.organizationId, { locationId })) > 0) {
       throw new ValidationError(
         "Ce lieu est utilisé par des cours au planning.",
+        "locationInUse",
       );
     }
 

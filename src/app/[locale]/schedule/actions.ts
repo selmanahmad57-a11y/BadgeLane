@@ -99,7 +99,10 @@ function readTermDates(formData: FormData) {
   const endDate = requiredDate(formData, "endDate");
 
   if (endDate < startDate) {
-    throw new ValidationError("La date de fin précède la date de début.");
+    throw new ValidationError(
+      "La date de fin précède la date de début.",
+      "termDatesReversed",
+    );
   }
 
   return { startDate, endDate };
@@ -225,7 +228,10 @@ async function assertClassReferences(
     .limit(1);
 
   if (!levelRow) {
-    throw new ValidationError("Ce niveau n'existe pas dans cette école.");
+    throw new ValidationError(
+      "Ce niveau n'existe pas dans cette école.",
+      "notInThisSchool",
+    );
   }
 
   if (references.instructorId) {
@@ -244,6 +250,7 @@ async function assertClassReferences(
     if (!member) {
       throw new ValidationError(
         "L'instructeur choisi n'est pas un membre actif de cette école.",
+        "instructorNotActive",
       );
     }
   }
@@ -384,7 +391,10 @@ export async function regenerateOccurrences(
         .limit(1);
 
       if (!row) {
-        throw new ValidationError("Ce cours n'existe pas dans cette école.");
+        throw new ValidationError(
+          "Ce cours n'existe pas dans cette école.",
+          "notInThisSchool",
+        );
       }
 
       const targetDates = occurrenceDatesFor(
@@ -395,7 +405,9 @@ export async function regenerateOccurrences(
 
       if (targetDates.length > MAX_GENERATED_OCCURRENCES) {
         throw new ValidationError(
-          `Cette session produirait ${targetDates.length} séances, au-delà de la limite de ${MAX_GENERATED_OCCURRENCES}. Vérifie ses dates.`,
+          `Cette session produirait ${targetDates.length} séances, au-delà de la limite de ${MAX_GENERATED_OCCURRENCES}.`,
+          "tooManyOccurrences",
+          { count: targetDates.length, limit: MAX_GENERATED_OCCURRENCES },
         );
       }
 

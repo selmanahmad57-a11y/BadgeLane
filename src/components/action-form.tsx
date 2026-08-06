@@ -32,6 +32,13 @@ export function ActionForm({
   size?: React.ComponentProps<typeof Button>["size"];
 }) {
   const t = useTranslations("actionErrors");
+  /**
+   * Les refus métier ont leur propre message. Le repli « vérifie les champs »
+   * ne concerne que les saisies malformées — répondre cela à quelqu'un qui
+   * vient de cliquer « donner une place » n'aurait aucun sens : il n'y a pas
+   * de champ.
+   */
+  const reasons = useTranslations("actionReasons");
 
   const [state, submit, pending] = useActionState<ActionResult | null, FormData>(
     async (_previous, formData) => action(formData),
@@ -54,7 +61,9 @@ export function ActionForm({
          * pas le formulaire.
          */
         <p role="alert" className="text-destructive text-sm">
-          {t(state.errorKey)}
+          {state.reason
+            ? reasons(state.reason, state.reasonValues)
+            : t(state.errorKey)}
         </p>
       ) : null}
     </form>

@@ -14,6 +14,8 @@ import {
 } from "@/config/scheduling";
 import { FIELD_LIMITS } from "@/config/validation";
 import {
+  getClassEnrolment,
+  getEnrollableStudents,
   getInstructorOptions,
   getLevelOptions,
   getLocationOptions,
@@ -30,6 +32,11 @@ import {
   regenerateOccurrences,
   setOccurrenceStatus,
 } from "./actions";
+import {
+  endEnrollment,
+  enrollStudent,
+  promoteEnrollment,
+} from "./enrollment-actions";
 
 type SchedulePageProps = {
   params: Promise<{ locale: string }>;
@@ -95,9 +102,13 @@ export default async function SchedulePage({
   const selectedClass =
     classes.find((entry) => entry.id === query.klass) ?? null;
 
-  const occurrences = selectedClass
-    ? await getOccurrences(organizationId, selectedClass.id)
-    : [];
+  const [occurrences, enrolment, enrollableStudents] = selectedClass
+    ? await Promise.all([
+        getOccurrences(organizationId, selectedClass.id),
+        getClassEnrolment(organizationId, selectedClass.id),
+        getEnrollableStudents(organizationId, selectedClass.id),
+      ])
+    : [[], null, []];
 
   /**
    * L'ordre des colonnes suit la langue : la semaine commence dimanche aux
@@ -290,6 +301,145 @@ export default async function SchedulePage({
             <p className="text-muted-foreground text-sm text-pretty">
               {t("timezoneNote", { timezone: session.organization.timezone })}
             </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {selectedClass && enrolment ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              {t("rosterHeading", {
+                title: selectedClass.title,
+                taken: enrolment.roster.length,
+                capacity: enrolment.capacity,
+              })}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {enrolment.roster.length === 0 ? (
+              <p className="text-muted-foreground text-sm">{t("noRoster")}</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {enrolment.roster.map((entry) => (
+                  <li
+                    key={entry.enrollmentId}
+                    className="flex flex-wrap items-center justify-between gap-2 text-sm"
+                  >
+                    <span>
+                      {entry.studentName}
+                      {entry.startDate ? (
+                        <span className="text-muted-foreground ms-2">
+                          {t("since", { date: entry.startDate })}
+                        </span>
+                      ) : null}
+                    </span>
+
+                    {canWrite ? (
+                      <ActionForm
+                        action={endEnrollment}
+                        submitLabel={t("endEnrollment")}
+                        size="xs"
+                        variant="ghost"
+                      >
+                        <input
+                          type="hidden"
+                          name="enrollmentId"
+                          value={entry.enrollmentId}
+                        />
+                      </ActionForm>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {enrolment.waitlist.length > 0 ? (
+              <div className="space-y-2">
+                <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                  {t("waitlistHeading", { count: enrolment.waitlist.length })}
+                </h3>
+                <ul className="flex flex-col gap-2">
+                  {enrolment.waitlist.map((entry) => (
+                    <li
+                      key={entry.enrollmentId}
+                      className="flex flex-wrap items-center justify-between gap-2 text-sm"
+                    >
+                      <span>
+                        <span className="text-muted-foreground me-2">
+                          #{entry.rank}
+                        </span>
+                        {entry.studentName}
+                      </span>
+
+                      {canWrite ? (
+                        <div className="flex items-center gap-1">
+                          <ActionForm
+                            action={promoteEnrollment}
+                            submitLabel={t("promote")}
+                            size="xs"
+                            variant="outline"
+                          >
+                            <input
+                              type="hidden"
+                              name="enrollmentId"
+                              value={entry.enrollmentId}
+                            />
+                          </ActionForm>
+                          <ActionForm
+                            action={endEnrollment}
+                            submitLabel={t("remove")}
+                            size="xs"
+                            variant="ghost"
+                          >
+                            <input
+                              type="hidden"
+                              name="enrollmentId"
+                              value={entry.enrollmentId}
+                            />
+                          </ActionForm>
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-muted-foreground text-sm text-pretty">
+                  {t("waitlistNote")}
+                </p>
+              </div>
+            ) : null}
+
+            {canWrite && enrollableStudents.length > 0 ? (
+              <ActionForm
+                action={enrollStudent}
+                submitLabel={t("enroll")}
+                size="sm"
+              >
+                <input
+                  type="hidden"
+                  name="klassId"
+                  value={selectedClass.id}
+                />
+                <select
+                  name="studentId"
+                  aria-label={t("student")}
+                  className={SELECT_CLASS}
+                  required
+                >
+                  {enrollableStudents.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </ActionForm>
+            ) : null}
+
+            {canWrite ? (
+              <p className="text-muted-foreground text-sm text-pretty">
+                {t("enrollNote")}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}

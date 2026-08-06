@@ -18,6 +18,7 @@ import {
 
 import { TENANT_CONTEXT_SETTING } from "@/config/database";
 import { STAFF_ROLES } from "@/config/roles";
+import { ENROLLMENT_STATUSES } from "@/config/enrollment";
 import { OCCURRENCE_STATUSES } from "@/config/scheduling";
 
 /**
@@ -511,6 +512,65 @@ export const classOccurrence = pgTable(
   ],
 );
 
+export const enrollmentStatusEnum = pgEnum(
+  "enrollment_status",
+  ENROLLMENT_STATUSES,
+);
+
+/**
+ * Le lien entre un élève et un cours, quel que soit son état.
+ *
+ * Table unique : être en liste d'attente est un statut, pas une autre table.
+ * Promouvoir quelqu'un revient donc à changer un champ, non à déplacer une
+ * ligne d'une table vers une autre — opération qui, faite en deux temps, finit
+ * toujours par échouer entre les deux.
+ *
+ * Le rang dans la file n'est pas stocké : il se dérive de `waitlistedAt`. Une
+ * donnée dérivable ne se saisit pas — et un entier de position exigerait une
+ * renumérotation à chaque départ, avec sa propre course.
+ */
+export const enrollment = pgTable(
+  "enrollment",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    studentId: uuid("student_id")
+      .notNull()
+      .references(() => student.id, { onDelete: "cascade" }),
+    klassId: uuid("klass_id")
+      .notNull()
+      .references(() => klass.id, { onDelete: "cascade" }),
+
+    status: enrollmentStatusEnum("status").notNull().default("active"),
+
+    /**
+     * Instant d'entrée en liste d'attente. Seule source du rang, qui se calcule
+     * à la lecture. Null dès que l'inscription devient active.
+     */
+    waitlistedAt: timestamp("waitlisted_at", { withTimezone: true }),
+
+    /**
+     * Début effectif dans le cours, en date civile de l'école. Posé au moment
+     * où l'inscription devient active — jamais reconstruit après coup : la
+     * facturation au prorata de la Semaine 8 en dépendra, et `created_at` ne
+     * le remplacerait pas fidèlement pour un élève promu depuis l'attente.
+     */
+    startDate: date("start_date"),
+    /** Fin effective, posée à la clôture. */
+    endDate: date("end_date"),
+
+    ...timestamps,
+  },
+  (table) => [
+    index("enrollment_organization_id_idx").on(table.organizationId),
+    index("enrollment_klass_id_idx").on(table.klassId),
+    index("enrollment_student_id_idx").on(table.studentId),
+    tenantIsolationPolicy("enrollment", "organization_id"),
+  ],
+);
+
 export type Organization = typeof organization.$inferSelect;
 export type NewOrganization = typeof organization.$inferInsert;
 export type StaffUser = typeof staffUser.$inferSelect;
@@ -535,3 +595,5 @@ export type Klass = typeof klass.$inferSelect;
 export type NewKlass = typeof klass.$inferInsert;
 export type ClassOccurrence = typeof classOccurrence.$inferSelect;
 export type NewClassOccurrence = typeof classOccurrence.$inferInsert;
+export type Enrollment = typeof enrollment.$inferSelect;
+export type NewEnrollment = typeof enrollment.$inferInsert;

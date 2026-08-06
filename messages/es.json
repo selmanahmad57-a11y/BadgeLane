@@ -230,6 +230,17 @@
     "noTermBody": "Las clases viven dentro de un periodo.",
     "goToTerms": "Crea uno primero",
     "missingPrerequisites": "Añade al menos un nivel y una sede antes de programar clases.",
-    "timezoneNote": "Las horas se introducen en la zona horaria de la escuela ({timezone}) y ahí permanecen, incluso al cambiar el horario de verano."
+    "timezoneNote": "Las horas se introducen en la zona horaria de la escuela ({timezone}) y ahí permanecen, incluso al cambiar el horario de verano.",
+    "rosterHeading": "{title} — {taken} de {capacity} inscritos",
+    "noRoster": "Todavía no hay nadie inscrito.",
+    "since": "desde el {date}",
+    "endEnrollment": "Dar de baja",
+    "waitlistHeading": "{count, plural, one {# en lista de espera} other {# en lista de espera}}",
+    "waitlistNote": "El puesto sigue el orden de llegada. Al dar plaza al primero, los demás suben solos: no hay numeración que mantener.",
+    "promote": "Dar plaza",
+    "remove": "Quitar",
+    "student": "Nadador",
+    "enroll": "Inscribir",
+    "enrollNote": "Si la clase está llena, el nadador pasa a la lista de espera. Las plazas se comprueban bajo bloqueo: dos personas que inscriban a la vez no pueden ocupar ambas la última plaza."
   }
 }

@@ -230,6 +230,17 @@
     "noTermBody": "Classes live inside a term.",
     "goToTerms": "Create one first",
     "missingPrerequisites": "Add at least one level and one location before scheduling classes.",
-    "timezoneNote": "Times are entered in the school's time zone ({timezone}) and stay there — including across daylight-saving changes."
+    "timezoneNote": "Times are entered in the school's time zone ({timezone}) and stay there — including across daylight-saving changes.",
+    "rosterHeading": "{title} — {taken} of {capacity} enrolled",
+    "noRoster": "No one enrolled yet.",
+    "since": "since {date}",
+    "endEnrollment": "Remove",
+    "waitlistHeading": "{count, plural, one {# on the waiting list} other {# on the waiting list}}",
+    "waitlistNote": "Rank follows the order people joined. Promoting the first moves everyone else up on their own — no numbering to maintain.",
+    "promote": "Give a place",
+    "remove": "Remove",
+    "student": "Swimmer",
+    "enroll": "Enrol",
+    "enrollNote": "If the class is full, the swimmer joins the waiting list instead. The seat count is checked under a lock, so two people enrolling at the same moment cannot both take the last place."
   }
 }

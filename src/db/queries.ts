@@ -1,9 +1,16 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, notInArray, or } from "drizzle-orm";
 
 import {
+  LIVE_ENROLLMENT_STATUSES,
+  type EnrollmentStatus,
+} from "@/config/enrollment";
+
+import { WAITLIST_RANK } from "./enrollment";
+import {
   classOccurrence,
+  enrollment,
   family,
   guardian,
   klass,
@@ -464,6 +471,170 @@ export async function countClassesUsing(
 
     return row?.total ?? 0;
   });
+}
+
+export type RosterEntry = {
+  enrollmentId: string;
+  studentId: string;
+  studentName: string;
+  status: EnrollmentStatus;
+  startDate: string | null;
+  familyId: string;
+};
+
+export type WaitlistEntry = RosterEntry & { rank: number };
+
+export type ClassEnrolment = {
+  capacity: number;
+  roster: RosterEntry[];
+  waitlist: WaitlistEntry[];
+};
+
+/**
+ * Effectif et file d'attente d'un cours.
+ *
+ * Le rang n'est pas lu : il est calculé par `row_number()` sur la même clé de
+ * tri que le module d'inscription. Promouvoir le premier fait donc remonter
+ * tous les suivants sans qu'aucune ligne ne soit réécrite.
+ */
+export async function getClassEnrolment(
+  organizationId: string,
+  klassId: string,
+): Promise<ClassEnrolment> {
+  return withTenant(organizationId, async (tx) => {
+    const [target] = await tx
+      .select({ capacity: klass.capacity })
+      .from(klass)
+      .where(
+        and(eq(klass.id, klassId), eq(klass.organizationId, organizationId)),
+      )
+      .limit(1);
+
+    if (!target) return { capacity: 0, roster: [], waitlist: [] };
+
+    const rows = await tx
+      .select({
+        enrollmentId: enrollment.id,
+        studentId: student.id,
+        firstName: student.firstName,
+        lastName: student.lastName,
+        familyId: student.familyId,
+        status: enrollment.status,
+        startDate: enrollment.startDate,
+        rank: WAITLIST_RANK,
+      })
+      .from(enrollment)
+      .innerJoin(student, eq(student.id, enrollment.studentId))
+      .where(
+        and(
+          eq(enrollment.organizationId, organizationId),
+          eq(enrollment.klassId, klassId),
+          inArray(enrollment.status, [...LIVE_ENROLLMENT_STATUSES]),
+        ),
+      )
+      .orderBy(asc(enrollment.status), asc(student.firstName));
+
+    const toEntry = (row: (typeof rows)[number]): RosterEntry => ({
+      enrollmentId: row.enrollmentId,
+      studentId: row.studentId,
+      studentName: `${row.firstName} ${row.lastName}`,
+      status: row.status,
+      startDate: row.startDate,
+      familyId: row.familyId,
+    });
+
+    return {
+      capacity: target.capacity,
+      roster: rows
+        .filter((row) => row.status !== "waitlisted")
+        .map(toEntry),
+      /**
+       * Le rang renvoyé par `row_number()` porte sur l'ensemble de la partition,
+       * inscrits compris ; il est donc recalculé sur la seule file, après filtre.
+       */
+      waitlist: rows
+        .filter((row) => row.status === "waitlisted")
+        .map((row, index) => ({ ...toEntry(row), rank: index + 1 })),
+    };
+  });
+}
+
+/** Élèves de l'école n'ayant pas déjà une inscription vivante à ce cours. */
+export async function getEnrollableStudents(
+  organizationId: string,
+  klassId: string,
+): Promise<{ id: string; label: string }[]> {
+  return withTenant(organizationId, async (tx) => {
+    const taken = tx
+      .select({ studentId: enrollment.studentId })
+      .from(enrollment)
+      .where(
+        and(
+          eq(enrollment.organizationId, organizationId),
+          eq(enrollment.klassId, klassId),
+          inArray(enrollment.status, [...LIVE_ENROLLMENT_STATUSES]),
+        ),
+      );
+
+    const rows = await tx
+      .select({
+        id: student.id,
+        firstName: student.firstName,
+        lastName: student.lastName,
+      })
+      .from(student)
+      .where(
+        and(
+          eq(student.organizationId, organizationId),
+          notInArray(student.id, taken),
+        ),
+      )
+      .orderBy(asc(student.firstName), asc(student.lastName));
+
+    return rows.map((row) => ({
+      id: row.id,
+      label: `${row.firstName} ${row.lastName}`,
+    }));
+  });
+}
+
+export type StudentEnrolment = {
+  enrollmentId: string;
+  klassId: string;
+  klassTitle: string;
+  levelName: string;
+  status: EnrollmentStatus;
+  startDate: string | null;
+  endDate: string | null;
+};
+
+/** Inscriptions d'un élève, historique compris. */
+export async function getStudentEnrolments(
+  organizationId: string,
+  studentId: string,
+): Promise<StudentEnrolment[]> {
+  return withTenant(organizationId, (tx) =>
+    tx
+      .select({
+        enrollmentId: enrollment.id,
+        klassId: klass.id,
+        klassTitle: klass.title,
+        levelName: level.name,
+        status: enrollment.status,
+        startDate: enrollment.startDate,
+        endDate: enrollment.endDate,
+      })
+      .from(enrollment)
+      .innerJoin(klass, eq(klass.id, enrollment.klassId))
+      .innerJoin(level, eq(level.id, klass.levelId))
+      .where(
+        and(
+          eq(enrollment.organizationId, organizationId),
+          eq(enrollment.studentId, studentId),
+        ),
+      )
+      .orderBy(asc(enrollment.status), asc(klass.title)),
+  );
 }
 
 /**

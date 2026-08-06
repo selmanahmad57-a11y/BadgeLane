@@ -24,6 +24,8 @@ export const CAPABILITIES = [
   "schedule:write",
   /** Relever la présence au bord du bassin. */
   "attendance:write",
+  /** Valider les compétences acquises. */
+  "progression:write",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -42,6 +44,7 @@ const CAPABILITIES_BY_ROLE: Readonly<Record<StaffRole, readonly Capability[]>> =
       "family:write",
       "schedule:write",
       "attendance:write",
+      "progression:write",
     ],
     admin: [
       "curriculum:write",
@@ -50,18 +53,19 @@ const CAPABILITIES_BY_ROLE: Readonly<Record<StaffRole, readonly Capability[]>> =
       "family:write",
       "schedule:write",
       "attendance:write",
+      "progression:write",
     ],
     /**
-     * Le coach écrit une seule chose : la présence. C'est son geste, celui que
-     * personne d'autre ne peut faire à sa place, et il l'accomplit au bord du
-     * bassin sans accès à un bureau.
+     * Le coach écrit deux choses, et deux seulement : la présence et les
+     * compétences acquises. Ce sont ses gestes — ceux que personne ne peut
+     * faire à sa place, accomplis au bord du bassin, sans accès à un bureau.
      *
      * Tout le reste lui reste en lecture — il a besoin de savoir qui il
      * encadre et de lire les notes médicales, pas de tenir les fiches. Cette
      * unique ouverture est vérifiée par `npm run authz:verify` : la porte doit
      * s'ouvrir d'un cran, pas en grand.
      */
-    coach: ["attendance:write"],
+    coach: ["attendance:write", "progression:write"],
   };
 
 export function can(role: StaffRole, capability: Capability): boolean {

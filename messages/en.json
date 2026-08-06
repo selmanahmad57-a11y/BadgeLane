@@ -87,7 +87,8 @@
     "medicalNotesHint": "Keep this to what a coach must know at the poolside — an allergy, asthma. It is health data about a child: record the minimum, not a medical file.",
     "save": "Save",
     "historyHeading": "History",
-    "historyBody": "Attendance and skill progress will appear here once classes are running."
+    "historyBody": "Attendance history will appear here.",
+    "badgesHeading": "Badges"
   },
   "dashboard": {
     "heading": "Dashboard",
@@ -273,6 +274,18 @@
     "noSessionsBody": "Nothing is scheduled for {date} — or the sessions have been cancelled.",
     "allSaved": "Everything saved.",
     "saving": "{count, plural, one {Saving # change…} other {Saving # changes…}}",
-    "offlinePending": "{count, plural, one {Offline — # change waiting} other {Offline — # changes waiting}}. They will be sent when the network returns; you can keep marking."
+    "offlinePending": "{count, plural, one {Offline — # change waiting} other {Offline — # changes waiting}}. They will be sent when the network returns; you can keep marking.",
+    "achieved": "Achieved",
+    "in_progress": "Working on it",
+    "skillsOf": "Skills — {level}",
+    "noLevel": "No level assigned yet — nothing to tick off."
+  },
+  "badges": {
+    "currentLevelLabel": "Level reached",
+    "noneYet": "No level completed yet",
+    "earned": "Level complete",
+    "inProgress": "working on it",
+    "skillCount": "{achieved} of {total} skills",
+    "noCurriculum": "No levels have been set up yet. Add programs and levels from the curriculum."
   }
 }

@@ -87,7 +87,8 @@
     "medicalNotesHint": "Limítalo a lo que un instructor debe saber junto a la piscina: una alergia, asma. Son datos de salud de un menor: registra lo mínimo, no un historial médico.",
     "save": "Guardar",
     "historyHeading": "Historial",
-    "historyBody": "La asistencia y el progreso por habilidades aparecerán aquí cuando las clases estén en marcha."
+    "historyBody": "El historial de asistencia aparecerá aquí.",
+    "badgesHeading": "Insignias"
   },
   "dashboard": {
     "heading": "Panel",
@@ -273,6 +274,18 @@
     "noSessionsBody": "No hay nada programado para el {date}, o las sesiones se han cancelado.",
     "allSaved": "Todo guardado.",
     "saving": "{count, plural, one {Guardando # cambio…} other {Guardando # cambios…}}",
-    "offlinePending": "{count, plural, one {Sin conexión — # cambio pendiente} other {Sin conexión — # cambios pendientes}}. Se enviarán cuando vuelva la red; puedes seguir marcando."
+    "offlinePending": "{count, plural, one {Sin conexión — # cambio pendiente} other {Sin conexión — # cambios pendientes}}. Se enviarán cuando vuelva la red; puedes seguir marcando.",
+    "achieved": "Logrado",
+    "in_progress": "En progreso",
+    "skillsOf": "Habilidades — {level}",
+    "noLevel": "Sin nivel asignado: nada que marcar."
+  },
+  "badges": {
+    "currentLevelLabel": "Nivel alcanzado",
+    "noneYet": "Todavía sin nivel completado",
+    "earned": "Nivel completado",
+    "inProgress": "en progreso",
+    "skillCount": "{achieved} de {total} habilidades",
+    "noCurriculum": "Todavía no hay niveles configurados. Añade programas y niveles desde el plan de estudios."
   }
 }

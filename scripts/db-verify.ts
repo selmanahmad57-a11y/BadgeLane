@@ -12,6 +12,7 @@ import {
   location,
   organization,
   program,
+  skill,
   student,
 } from "../src/db/schema";
 import {
@@ -258,6 +259,42 @@ async function probeCrossTenantGuard(
       if (!locationRefused) {
         problems.push(
           "GARDE INOPÉRANTE : un cours pourrait être programmé dans le bassin d'une autre école.",
+        );
+      }
+
+      /**
+       * Et sur les compétences : un coach ne doit pas pouvoir valider une
+       * compétence appartenant au curriculum d'une autre école. Même piège
+       * FK/RLS, appliqué à la donnée la plus visible du produit.
+       */
+      await useTenantContext(firstOrganizationId);
+      const [skillA] = await tx
+        .insert(skill)
+        .values({
+          organizationId: firstOrganizationId,
+          levelId: levelA.id,
+          name: "probe skill",
+          sortOrder: 10,
+        })
+        .returning();
+      await useTenantContext(secondOrganizationId);
+
+      let skillRefused = false;
+      try {
+        await assertBelongsToTenant(
+          tx,
+          skill,
+          "skill",
+          skillA.id,
+          secondOrganizationId,
+        );
+      } catch (error) {
+        skillRefused = error instanceof CrossTenantReferenceError;
+      }
+
+      if (!skillRefused) {
+        problems.push(
+          "GARDE INOPÉRANTE : une compétence d'une autre école pourrait être validée.",
         );
       }
 

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 
 import { ActionForm } from "@/components/action-form";
+import { BadgeWall } from "@/components/badge-wall";
 import { ConsoleShell } from "@/components/console-shell";
 import { SELECT_CLASS } from "@/components/locale-select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +10,11 @@ import { Input } from "@/components/ui/input";
 import { can } from "@/config/permissions";
 import { familyPath } from "@/config/routes";
 import { FIELD_LIMITS } from "@/config/validation";
-import { getLevelOptions, getStudentDetail } from "@/db/queries";
+import {
+  getLevelOptions,
+  getStudentDetail,
+  getStudentProgress,
+} from "@/db/queries";
 import { Link } from "@/i18n/navigation";
 import { requireOrganizationSession } from "@/lib/auth";
 
@@ -26,9 +31,10 @@ export default async function StudentPage({ params }: StudentPageProps) {
   const session = await requireOrganizationSession(locale);
   const t = await getTranslations("students");
 
-  const [student, levelOptions] = await Promise.all([
+  const [student, levelOptions, progress] = await Promise.all([
     getStudentDetail(session.organization.id, studentId),
     getLevelOptions(session.organization.id),
+    getStudentProgress(session.organization.id, studentId),
   ]);
 
   /**
@@ -144,6 +150,15 @@ export default async function StudentPage({ params }: StudentPageProps) {
           {t("medicalNotesHint")}
         </p>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("badgesHeading")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <BadgeWall levels={progress} />
+        </CardContent>
+      </Card>
 
       <Card className="border-dashed">
         <CardHeader>

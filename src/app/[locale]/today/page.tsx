@@ -7,11 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { can } from "@/config/permissions";
 import { DATE_PATTERN } from "@/config/scheduling";
-import { getSessionsForDate } from "@/db/queries";
+import { getPoolsideSkills, getSessionsForDate } from "@/db/queries";
 import { requireOrganizationSession } from "@/lib/auth";
 import { todayInTimeZone } from "@/lib/occurrences";
 
 import { submitAttendance } from "./actions";
+import { submitProgress } from "./progress-actions";
 
 type TodayPageProps = {
   params: Promise<{ locale: string }>;
@@ -47,7 +48,20 @@ export default async function TodayPage({
       : todayInTimeZone(session.organization.timezone);
 
   const sessions = await getSessionsForDate(session.organization.id, date);
+
+  /** Compétences du niveau courant de chaque élève présent au planning du jour. */
+  const studentIds = [
+    ...new Set(
+      sessions.flatMap((entry) => entry.roster.map((row) => row.studentId)),
+    ),
+  ];
+  const skillsByStudent = await getPoolsideSkills(
+    session.organization.id,
+    studentIds,
+  );
+
   const canWrite = can(session.staffUser.role, "attendance:write");
+  const canMarkProgress = can(session.staffUser.role, "progression:write");
 
   return (
     <ConsoleShell title={t("heading")} description={t("intro")}>
@@ -80,9 +94,12 @@ export default async function TodayPage({
       ) : (
         <AttendanceSheet
           sessions={sessions}
+          poolsideSkills={Object.fromEntries(skillsByStudent)}
           staffUserId={session.staffUser.id}
           canWrite={canWrite}
+          canMarkProgress={canMarkProgress}
           submit={submitAttendance}
+          submitProgress={submitProgress}
         />
       )}
     </ConsoleShell>

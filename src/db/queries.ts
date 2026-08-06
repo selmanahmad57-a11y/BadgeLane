@@ -13,6 +13,8 @@ import {
 } from "drizzle-orm";
 
 import type { AttendanceStatus } from "@/config/attendance";
+import type { ProgressStatus } from "@/config/progress";
+import type { LevelWithSkills } from "@/lib/badges";
 import {
   LIVE_ENROLLMENT_STATUSES,
   type EnrollmentStatus,
@@ -31,6 +33,7 @@ import {
   location,
   program,
   skill,
+  skillProgress,
   staffUser,
   student,
   term,
@@ -768,6 +771,162 @@ export async function getSessionsForDate(
             markedByKey.get(`${session.occurrenceId}:${row.studentId}`) ?? null,
         })),
     }));
+  });
+}
+
+export type StudentSkill = {
+  skillId: string;
+  name: string;
+  status: ProgressStatus | null;
+};
+
+export type StudentLevelProgress = LevelWithSkills & {
+  entries: StudentSkill[];
+};
+
+/**
+ * Progression d'un élève sur tout le curriculum de son école.
+ *
+ * Renvoie chaque niveau avec ses compétences et l'état de l'élève. Une
+ * compétence sans ligne vaut « pas commencée » — l'absence est l'information.
+ */
+export async function getStudentProgress(
+  organizationId: string,
+  studentId: string,
+): Promise<StudentLevelProgress[]> {
+  return withTenant(organizationId, async (tx) => {
+    const [levels, skills, marks] = await Promise.all([
+      tx
+        .select({
+          id: level.id,
+          name: level.name,
+          color: level.color,
+          sortOrder: level.sortOrder,
+        })
+        .from(level)
+        .where(eq(level.organizationId, organizationId))
+        .orderBy(asc(level.sortOrder)),
+      tx
+        .select({ id: skill.id, name: skill.name, levelId: skill.levelId })
+        .from(skill)
+        .where(eq(skill.organizationId, organizationId))
+        .orderBy(asc(skill.sortOrder)),
+      tx
+        .select({ skillId: skillProgress.skillId, status: skillProgress.status })
+        .from(skillProgress)
+        .where(
+          and(
+            eq(skillProgress.organizationId, organizationId),
+            eq(skillProgress.studentId, studentId),
+          ),
+        ),
+    ]);
+
+    const statusBySkill = new Map(marks.map((row) => [row.skillId, row.status]));
+
+    return levels.map((entry) => {
+      const own = skills.filter((row) => row.levelId === entry.id);
+
+      return {
+        ...entry,
+        skills: own.map((row) => ({ id: row.id, name: row.name })),
+        entries: own.map((row) => ({
+          skillId: row.id,
+          name: row.name,
+          status: statusBySkill.get(row.id) ?? null,
+        })),
+      };
+    });
+  });
+}
+
+/**
+ * Compétences à cocher au bord du bassin, pour chaque élève d'une séance.
+ *
+ * Limitées au **niveau courant** de l'élève : le coach n'a pas à faire défiler
+ * tout le curriculum pour trouver les deux cases du jour. Un élève sans niveau
+ * assigné renvoie une liste vide — l'écran le dira plutôt que d'afficher un
+ * vide inexplicable.
+ */
+export async function getPoolsideSkills(
+  organizationId: string,
+  studentIds: readonly string[],
+): Promise<Map<string, { levelName: string; entries: StudentSkill[] }>> {
+  if (studentIds.length === 0) return new Map();
+
+  return withTenant(organizationId, async (tx) => {
+    const students = await tx
+      .select({
+        id: student.id,
+        levelId: student.currentLevelId,
+        levelName: level.name,
+      })
+      .from(student)
+      .leftJoin(level, eq(level.id, student.currentLevelId))
+      .where(
+        and(
+          eq(student.organizationId, organizationId),
+          inArray(student.id, [...studentIds]),
+        ),
+      );
+
+    const levelIds = students
+      .map((row) => row.levelId)
+      .filter((id): id is string => id !== null);
+
+    if (levelIds.length === 0) return new Map();
+
+    const [skills, marks] = await Promise.all([
+      tx
+        .select({ id: skill.id, name: skill.name, levelId: skill.levelId })
+        .from(skill)
+        .where(
+          and(
+            eq(skill.organizationId, organizationId),
+            inArray(skill.levelId, levelIds),
+          ),
+        )
+        .orderBy(asc(skill.sortOrder)),
+      tx
+        .select({
+          studentId: skillProgress.studentId,
+          skillId: skillProgress.skillId,
+          status: skillProgress.status,
+        })
+        .from(skillProgress)
+        .where(
+          and(
+            eq(skillProgress.organizationId, organizationId),
+            inArray(skillProgress.studentId, [...studentIds]),
+          ),
+        ),
+    ]);
+
+    const statusByPair = new Map(
+      marks.map((row) => [`${row.studentId}:${row.skillId}`, row.status]),
+    );
+
+    const result = new Map<
+      string,
+      { levelName: string; entries: StudentSkill[] }
+    >();
+
+    for (const row of students) {
+      if (!row.levelId || !row.levelName) continue;
+
+      result.set(row.id, {
+        levelName: row.levelName,
+        entries: skills
+          .filter((entry) => entry.levelId === row.levelId)
+          .map((entry) => ({
+            skillId: entry.id,
+            name: entry.name,
+            status: statusByPair.get(`${row.id}:${entry.id}`) ?? null,
+          })),
+      });
+    }
+
+    return result;
   });
 }
 

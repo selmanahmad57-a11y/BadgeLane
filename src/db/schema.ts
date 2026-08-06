@@ -20,6 +20,7 @@ import { TENANT_CONTEXT_SETTING } from "@/config/database";
 import { STAFF_ROLES } from "@/config/roles";
 import { ATTENDANCE_STATUSES } from "@/config/attendance";
 import { ENROLLMENT_STATUSES } from "@/config/enrollment";
+import { PROGRESS_STATUSES } from "@/config/progress";
 import { OCCURRENCE_STATUSES } from "@/config/scheduling";
 
 /**
@@ -632,6 +633,70 @@ export const attendance = pgTable(
   ],
 );
 
+export const progressStatusEnum = pgEnum(
+  "progress_status",
+  PROGRESS_STATUSES,
+);
+
+/**
+ * Ce qu'un nageur a acquis, compétence par compétence. Le cœur du produit.
+ *
+ * Une ligne n'existe **que** si un coach a marqué quelque chose : l'absence de
+ * ligne vaut « pas commencé ». Rien n'est pré-créé, ni à l'inscription, ni
+ * quand une compétence s'ajoute au curriculum.
+ *
+ * L'unicité (école, élève, compétence) est posée **avant** que la file
+ * hors-ligne ne s'y branche : c'est elle qui transforme l'envoi en `upsert`,
+ * donc qui rend le rejeu sûr. Une file qu'on ne peut pas retenter ne sert à
+ * rien.
+ *
+ * Le badge de niveau n'est pas ici : il se calcule. Un niveau est acquis quand
+ * toutes ses compétences le sont — ajouter une compétence retire donc le badge
+ * à ceux qui ne l'ont pas encore. Un badge stocké exigerait un recalcul à
+ * chaque modification du curriculum, et se tromperait un jour.
+ */
+export const skillProgress = pgTable(
+  "skill_progress",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    studentId: uuid("student_id")
+      .notNull()
+      .references(() => student.id, { onDelete: "cascade" }),
+    skillId: uuid("skill_id")
+      .notNull()
+      .references(() => skill.id, { onDelete: "cascade" }),
+
+    status: progressStatusEnum("status").notNull(),
+
+    /** Posé quand le statut devient `achieved`, effacé s'il régresse. */
+    achievedAt: timestamp("achieved_at", { withTimezone: true }),
+
+    /**
+     * Coach ayant validé. `SET NULL` : un badge survit au départ de celui qui
+     * l'a accordé. L'accomplissement de l'enfant reste, seule l'attribution
+     * s'efface.
+     */
+    coachId: uuid("coach_id").references(() => staffUser.id, {
+      onDelete: "set null",
+    }),
+
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("skill_progress_student_skill_key").on(
+      table.organizationId,
+      table.studentId,
+      table.skillId,
+    ),
+    index("skill_progress_organization_id_idx").on(table.organizationId),
+    index("skill_progress_student_id_idx").on(table.studentId),
+    tenantIsolationPolicy("skill_progress", "organization_id"),
+  ],
+);
+
 export type Organization = typeof organization.$inferSelect;
 export type NewOrganization = typeof organization.$inferInsert;
 export type StaffUser = typeof staffUser.$inferSelect;
@@ -660,3 +725,5 @@ export type Enrollment = typeof enrollment.$inferSelect;
 export type NewEnrollment = typeof enrollment.$inferInsert;
 export type Attendance = typeof attendance.$inferSelect;
 export type NewAttendance = typeof attendance.$inferInsert;
+export type SkillProgress = typeof skillProgress.$inferSelect;
+export type NewSkillProgress = typeof skillProgress.$inferInsert;

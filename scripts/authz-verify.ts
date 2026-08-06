@@ -44,6 +44,7 @@ const EXPECTED: Record<StaffRole, Record<Capability, boolean>> = {
     "family:write": true,
     "schedule:write": true,
     "attendance:write": true,
+    "progression:write": true,
   },
   admin: {
     "curriculum:write": true,
@@ -52,8 +53,12 @@ const EXPECTED: Record<StaffRole, Record<Capability, boolean>> = {
     "family:write": true,
     "schedule:write": true,
     "attendance:write": true,
+    "progression:write": true,
   },
-  /** La porte s'ouvre d'un cran : la présence, et rien d'autre. */
+  /**
+   * Deux crans, et deux seulement : la présence (Semaine 6) et les compétences
+   * (Semaine 7). Ce sont les deux gestes du bord du bassin.
+   */
   coach: {
     "curriculum:write": false,
     "location:write": false,
@@ -61,6 +66,7 @@ const EXPECTED: Record<StaffRole, Record<Capability, boolean>> = {
     "family:write": false,
     "schedule:write": false,
     "attendance:write": true,
+    "progression:write": true,
   },
 };
 
@@ -112,9 +118,17 @@ const coachWritable = CAPABILITIES.filter((capability) =>
 
 console.log(`\n  Le coach écrit : ${coachWritable.join(", ") || "rien"}`);
 
+/**
+ * Affirmé en toutes lettres : le coach écrit la présence et les compétences,
+ * rien d'autre. Une capacité supplémentaire qui lui serait accordée par
+ * inadvertance échouerait ici, même si quelqu'un pensait à mettre à jour la
+ * matrice ci-dessus.
+ */
 check(
-  "le coach ne détient qu'une seule capacité d'écriture",
-  coachWritable.length === 1 && coachWritable[0] === "attendance:write",
+  "le coach ne détient que les deux capacités du bord du bassin",
+  coachWritable.length === 2 &&
+    coachWritable.includes("attendance:write") &&
+    coachWritable.includes("progression:write"),
   coachWritable.join(", "),
 );
 

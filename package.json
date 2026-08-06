@@ -18,7 +18,8 @@
     "scheduling:verify": "tsx scripts/scheduling-verify.ts",
     "enrollment:verify": "tsx scripts/enrollment-verify.ts",
     "authz:verify": "tsx scripts/authz-verify.ts",
-    "attendance:verify": "tsx scripts/attendance-verify.ts"
+    "attendance:verify": "tsx scripts/attendance-verify.ts",
+    "badges:verify": "tsx scripts/badges-verify.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

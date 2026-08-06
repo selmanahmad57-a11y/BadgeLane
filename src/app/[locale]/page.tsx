@@ -1,7 +1,7 @@
 import { Show } from "@clerk/nextjs";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { routes } from "@/config/routes";
 import { Link } from "@/i18n/navigation";
 
@@ -30,24 +30,31 @@ export default async function LandingPage({ params }: LandingPageProps) {
         <p className="text-muted-foreground text-lg text-pretty">{t("body")}</p>
 
         <div className="flex flex-wrap gap-3">
-          {/* `Show` remplace `SignedIn`/`SignedOut` depuis Clerk v7. */}
+          {/*
+            Ces éléments naviguent : ce sont des liens, pas des boutons. On leur
+            applique donc l'apparence d'un bouton via `buttonVariants` plutôt
+            que de faire rendre un `<a>` par le composant Button — lequel
+            supprimerait la sémantique native attendue par les lecteurs d'écran
+            et la navigation au clavier.
+
+            `Show` remplace `SignedIn`/`SignedOut` depuis Clerk v7.
+          */}
           <Show when="signed-out">
-            {/*
-              Base UI compose via `render` (et non `asChild`) : le bouton rend
-              le lien localisé tout en conservant ses styles et sa sémantique.
-            */}
-            <Button render={<Link href={routes.signUp} />}>
+            <Link href={routes.signUp} className={buttonVariants()}>
               {t("signUp")}
-            </Button>
-            <Button variant="outline" render={<Link href={routes.signIn} />}>
+            </Link>
+            <Link
+              href={routes.signIn}
+              className={buttonVariants({ variant: "outline" })}
+            >
               {t("signIn")}
-            </Button>
+            </Link>
           </Show>
 
           <Show when="signed-in">
-            <Button render={<Link href={routes.dashboard} />}>
+            <Link href={routes.dashboard} className={buttonVariants()}>
               {t("openDashboard")}
-            </Button>
+            </Link>
           </Show>
         </div>
       </div>

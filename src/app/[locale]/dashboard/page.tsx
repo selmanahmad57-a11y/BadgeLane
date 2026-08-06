@@ -1,4 +1,4 @@
-import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
+import { ClerkLoaded, OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,9 +40,21 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <OrganizationSwitcher hidePersonal />
-          <UserButton />
+        {/*
+          Ces deux composants Clerk lisent la session côté navigateur. Montés
+          avant que le SDK client ait fini de se charger, ils avertissent
+          qu'aucune session n'est active — alors que la page, elle, est bien
+          rendue côté serveur pour un utilisateur authentifié.
+
+          `ClerkLoaded` diffère leur rendu jusqu'à ce que la session cliente
+          soit disponible. La réserve d'espace évite que l'en-tête ne sursaute
+          au moment où ils apparaissent.
+        */}
+        <div className="flex min-h-8 items-center gap-3">
+          <ClerkLoaded>
+            <OrganizationSwitcher hidePersonal />
+            <UserButton />
+          </ClerkLoaded>
         </div>
       </header>
 

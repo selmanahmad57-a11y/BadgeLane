@@ -5,7 +5,6 @@ import { drizzle } from "drizzle-orm/neon-serverless";
 import ws from "ws";
 
 import { TENANT_CONTEXT_SETTING } from "../src/config/database";
-import { routes } from "../src/config/routes";
 import { SORT_ORDER_STEP } from "../src/config/validation";
 import { occurrenceDatesFor } from "../src/lib/occurrences";
 import {
@@ -126,6 +125,21 @@ async function main(): Promise<number> {
   }
 
 
+  /**
+   * Import différé, et non statique en tête de fichier.
+   *
+   * `src/config/routes` tire `config/i18n`, qui valide la configuration client
+   * **au chargement du module**. Or les imports sont évalués avant la première
+   * ligne de `main()` : un import statique s'exécuterait donc AVANT
+   * `loadEnvFile()`, et le script mourrait en réclamant `NEXT_PUBLIC_APP_URL`
+   * et consorts — alors qu'elles sont bien dans `.env.local`.
+   *
+   * Le piège ne se voit pas en relisant : il ne dépend pas de ce que fait le
+   * code, mais de l'ordre dans lequel Node l'exécute. Tout script qui voudra
+   * lire une route devra faire pareil.
+   */
+  const { routes } = await import("../src/config/routes");
+
   neonConfig.webSocketConstructor =
     globalThis.WebSocket ?? (ws as unknown as typeof globalThis.WebSocket);
 
@@ -148,6 +162,7 @@ async function main(): Promise<number> {
           organizationId,
           preferredLanguage,
           process.env.DEMO_PARENT_EMAIL?.trim().toLowerCase(),
+          routes.portal,
         );
   } finally {
     await pool.end();
@@ -293,6 +308,8 @@ async function seedOrganization(
    * connexion parent est indisponible.
    */
   demoParentEmail: string | undefined,
+  /** Chemin du portail parent, à afficher dans le récapitulatif. */
+  portalPath: string,
 ): Promise<number> {
   return db.transaction(async (tx) => {
     await tx.execute(
@@ -357,6 +374,36 @@ async function seedOrganization(
         preferredLanguage,
       })),
       );
+    }
+
+    /**
+     * Réconciliation de l'adresse du parent de démonstration.
+     *
+     * Sans ce bloc, renseigner `DEMO_PARENT_EMAIL` **après** un premier seed ne
+     * ferait rien : la famille existant déjà, l'insertion ci-dessus est sautée.
+     * Le script afficherait pourtant « portail essayable », et l'utilisateur
+     * chercherait pourquoi sa connexion ne trouve aucune famille.
+     *
+     * C'est la même faute qu'en Semaine 3, où le seed annonçait une affectation
+     * de niveau qu'il n'avait pas faite : un script qui rapporte une intention
+     * plutôt qu'un résultat est pire qu'un script qui échoue.
+     */
+    let parentEmailApplied = !existing && Boolean(demoParentEmail);
+
+    if (existing && demoParentEmail) {
+      const [reconciled] = await tx
+        .update(guardian)
+        .set({ email: demoParentEmail })
+        .where(
+          and(
+            eq(guardian.organizationId, organizationId),
+            eq(guardian.familyId, createdFamily.id),
+            eq(guardian.name, DEMO.guardians[0].name),
+          ),
+        )
+        .returning({ id: guardian.id });
+
+      parentEmailApplied = Boolean(reconciled);
     }
 
     /**
@@ -582,9 +629,16 @@ async function seedOrganization(
         existingTerm
           ? "  planning    déjà présent"
           : `  planning    « ${DEMO.term.name} », ${createdClasses} cours, ${generatedOccurrences} séances générées`,
-        demoParentEmail
-          ? `  portail     ${DEMO.guardians[0].name} est joignable à ${demoParentEmail} — connecte-toi avec cette adresse, vérifie-la, puis ouvre /${preferredLanguage}${routes.portal}`
-          : `  portail     aucun DEMO_PARENT_EMAIL : le portail parent ne sera pas essayable, les adresses @${DEMO_DOMAIN} ne pouvant pas être vérifiées`,
+        /**
+         * Trois états distincts, jamais confondus : appliqué, non demandé, ou
+         * demandé sans cible trouvée. Le troisième est le seul qui mérite qu'on
+         * s'inquiète, et il doit se voir.
+         */
+        parentEmailApplied
+          ? `  portail     ${DEMO.guardians[0].name} est joignable à ${demoParentEmail} — connecte-toi avec cette adresse, vérifie-la, puis ouvre /${preferredLanguage}${portalPath}`
+          : demoParentEmail
+            ? `  portail     DEMO_PARENT_EMAIL est renseignée mais « ${DEMO.guardians[0].name} » est introuvable : l'adresse n'a été posée sur personne`
+            : `  portail     aucun DEMO_PARENT_EMAIL : le portail parent ne sera pas essayable, les adresses @${DEMO_DOMAIN} ne pouvant pas être vérifiées`,
         "",
         `Tout est préfixé « ${DEMO_PREFIX.trim()} » et adressé en @${DEMO_DOMAIN} pour être repérable et purgeable.`,
       ].join("\n"),

@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 
 import { stripeEnv } from "@/config/env.stripe";
 import { db } from "@/db/client";
+import { isUniqueViolation } from "@/db/errors";
 import { stripeEvent } from "@/db/schema";
 import { resolveOrganizationForAccount } from "@/db/stripe-lookup";
 import { withTenant } from "@/db/tenant";
@@ -65,11 +66,6 @@ const HANDLED = new Set([
   "invoice.voided",
   "invoice.marked_uncollectible",
 ]);
-
-/** Violation d'unicité Postgres : l'événement a déjà été traité. */
-function isDuplicate(error: unknown): boolean {
-  return (error as { code?: string })?.code === "23505";
-}
 
 export async function POST(request: Request) {
   const stripe = getStripe();
@@ -153,8 +149,12 @@ export async function POST(request: Request) {
       }
     });
   } catch (error) {
-    if (isDuplicate(error)) {
-      /** Déjà traité, et intégralement : rien à refaire. */
+    if (isUniqueViolation(error)) {
+      /**
+       * Déjà traité, et intégralement : rien à refaire. Répondre 200 est ici
+       * la seule réponse correcte — un 500 ferait retenter Stripe sur un
+       * événement dont le doublon est justement la preuve qu'il est acquis.
+       */
       return new Response("duplicate", { status: 200 });
     }
 

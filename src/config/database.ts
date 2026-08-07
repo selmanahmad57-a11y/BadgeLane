@@ -21,3 +21,21 @@ export const TENANT_CONTEXT_SETTING = "app.current_org_id";
  * la même connexion du pool.
  */
 export const TENANT_CONTEXT_IS_TRANSACTION_LOCAL = true;
+
+/**
+ * SQLSTATE d'une violation de contrainte d'unicité (`unique_violation`).
+ *
+ * Ce n'est pas un détail d'implémentation à reconnaître au passage : c'est le
+ * mécanisme par lequel un doublon devient *impossible* plutôt que *détecté*.
+ * Le webhook Stripe s'en sert pour distinguer « déjà traité » — une non-erreur,
+ * qui doit répondre 200 — de toute autre défaillance, qui doit faire retenter.
+ */
+export const UNIQUE_VIOLATION_SQLSTATE = "23505";
+
+/**
+ * Profondeur maximale explorée dans la chaîne `cause` d'une erreur.
+ *
+ * Borne un cycle éventuel ; huit niveaux dépassent largement l'empilement
+ * réel (pilote → Drizzle).
+ */
+export const ERROR_CAUSE_MAX_DEPTH = 8;

@@ -126,6 +126,12 @@ vide affichant le nom de l'école, ton rôle, son fuseau et sa devise.
 | `npm run db:studio` | Explorateur Drizzle |
 | `npm run db:verify` | Audite l'isolation multi-tenant |
 | `npm run i18n:verify` | Vérifie que tous les catalogues ont les mêmes clés |
+| `npm run scheduling:verify` | Génération des séances, changements d'heure compris |
+| `npm run enrollment:verify` | Capacité sous concurrence réelle, verrou contre sans verrou |
+| `npm run authz:verify` | Chaque rôle n'ouvre qu'un cran, contrôle négatif à l'appui |
+| `npm run attendance:verify` | Relevés de présence et remplacement du plus récent |
+| `npm run badges:verify` | Dérivation des badges quand le curriculum évolue |
+| `npm run billing:verify` | Doublon d'événement Stripe, et vue échappant à la RLS |
 
 ---
 

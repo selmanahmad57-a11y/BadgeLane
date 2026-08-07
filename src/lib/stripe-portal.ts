@@ -1,5 +1,3 @@
-import "server-only";
-
 import type Stripe from "stripe";
 
 import {
@@ -12,6 +10,16 @@ import type { forConnectedAccount } from "./stripe";
 
 /**
  * Le portail client de Stripe, sur le compte de l'école.
+ *
+ * ── Pourquoi ce module n'est PAS `server-only` ──────────────────────────────
+ *
+ * Il ne lit aucune base, ne détient aucun secret, et reçoit son client Stripe
+ * en argument : c'est de la logique de configuration, pas un accès privilégié.
+ *
+ * Surtout, ce qu'il décide — un parent peut-il résilier ? — est une propriété
+ * de sécurité, et une propriété de sécurité doit pouvoir être **exécutée par un
+ * script**. Enfermé derrière `server-only`, il ne serait vérifiable que par
+ * relecture, c'est-à-dire pas vérifiable. Même raison que `verified-email.ts`.
  *
  * ── Ce qu'il remplace ────────────────────────────────────────────────────────
  *

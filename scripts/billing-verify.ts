@@ -1,11 +1,15 @@
-import { neonConfig, Pool } from "@neondatabase/serverless";
+import { neonConfig, Pool, type PoolClient } from "@neondatabase/serverless";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import { config as loadEnvFile } from "dotenv";
 import ws from "ws";
 
+import Stripe from "stripe";
+
+import { resolveParentPortalConfiguration } from "../src/lib/stripe-portal";
 import {
   AT_RISK_SUBSCRIPTION_STATUSES,
+  PARENT_PORTAL_CONFIGURATION_MARK,
   CUSTOMER_PORTAL_FEATURES,
   CUSTOMER_PORTAL_LOCALE,
   isRecurringInterval,
@@ -162,6 +166,13 @@ async function main(): Promise<number> {
       CUSTOMER_PORTAL_LOCALE === "auto",
       CUSTOMER_PORTAL_LOCALE,
     );
+
+    const portalClient = await pool.connect();
+    try {
+      await checkLiveParentPortal(portalClient, check);
+    } finally {
+      portalClient.release();
+    }
 
     console.log("\nCe que l'école doit voir comme impayé");
 
@@ -354,6 +365,147 @@ async function main(): Promise<number> {
   );
 
   return failures.length === 0 ? 0 : 1;
+}
+
+/**
+ * Éprouve la configuration du portail parent **chez Stripe**, pas dans notre
+ * constante TypeScript.
+ *
+ * ── Pourquoi la vérification précédente ne prouvait rien ────────────────────
+ *
+ * Elle lisait `CUSTOMER_PORTAL_FEATURES` — un objet de notre code. Le
+ * compilateur le valide déjà ; le relire n'apprend rien. Ce qui compte est ce
+ * que **Stripe applique**, et seul un appel réel le dit. C'est exactement
+ * l'écart qui avait fait refuser l'API v1 des comptes en Semaine 8 : le code
+ * compilait, l'appel échouait.
+ *
+ * ── Et pourquoi on retire la marque d'abord ─────────────────────────────────
+ *
+ * Lire une configuration posée à la main prouverait le compte de démonstration,
+ * pas la logique. Les configurations de portail sont par compte connecté : pour
+ * toute autre école, il n'y en a aucune. On se remet donc dans cet état — marque
+ * retirée — et on laisse le code la créer. C'est le chemin que vivra la
+ * deuxième école, et c'est celui qu'on veut prouver.
+ */
+async function checkLiveParentPortal(
+  client: PoolClient,
+  check: (label: string, ok: boolean, detail?: string) => void,
+): Promise<void> {
+  console.log("\nPortail parent : la configuration VIVANTE chez Stripe");
+
+  /**
+   * Le client est construit ici plutôt qu'emprunté à `src/lib/stripe` : ce
+   * module porte `server-only` et ne peut pas s'exécuter hors de Next.js. La
+   * signature du résolveur reçoit son client en argument précisément pour ça —
+   * la logique qu'on veut prouver n'en dépend pas.
+   */
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+
+  if (!secretKey) {
+    check("Stripe configuré sur cette instance", false, "aucune clé");
+    return;
+  }
+
+  const stripe = new Stripe(secretKey, { appInfo: { name: "BadgeLane" } });
+
+  /** Le compte connecté vient de la base, jamais d'une constante de script. */
+  const { rows } = await client.query(
+    "select stripe_account_id from stripe_account_lookup limit 1",
+  );
+  const accountId = (rows[0] as { stripe_account_id?: string })?.stripe_account_id;
+
+  if (!accountId) {
+    check(
+      "une école a connecté un compte Stripe",
+      false,
+      "aucun compte connecté — lance l'onboarding pour éprouver ce chemin",
+    );
+    return;
+  }
+
+  const scoped = { stripeAccount: accountId };
+
+  const before = await stripe.billingPortal.configurations.list(
+    { limit: 100 },
+    scoped,
+  );
+
+  for (const configuration of before.data) {
+    if (configuration.metadata?.[PARENT_PORTAL_CONFIGURATION_MARK] === "true") {
+      await stripe.billingPortal.configurations.update(
+        configuration.id,
+        { metadata: { [PARENT_PORTAL_CONFIGURATION_MARK]: "" } },
+        scoped,
+      );
+    }
+  }
+
+  const resolved = await resolveParentPortalConfiguration(stripe, scoped);
+
+  check(
+    "sur un compte sans notre marque, une configuration est CRÉÉE",
+    Boolean(resolved),
+    String(resolved),
+  );
+
+  const live = await stripe.billingPortal.configurations.retrieve(
+    resolved,
+    {},
+    scoped,
+  );
+
+  /**
+   * LE contrôle de ce bloc. Un parent qui résilie libère une place et
+   * déclenche une promotion de liste d'attente que personne n'a validée —
+   * exactement le pouvoir refusé côté BadgeLane en Temps 2a.
+   */
+  check(
+    "résilier un abonnement est refusé — lu chez Stripe",
+    live.features.subscription_cancel.enabled === false,
+    `subscription_cancel = ${live.features.subscription_cancel.enabled}`,
+  );
+  check(
+    "modifier un abonnement est refusé — lu chez Stripe",
+    live.features.subscription_update.enabled === false,
+  );
+  check(
+    "remplacer son moyen de paiement reste possible",
+    live.features.payment_method_update.enabled === true,
+  );
+
+  const schoolDefault = before.data.find((entry) => entry.is_default);
+  check(
+    "la configuration parent est distincte de celle de l'école",
+    schoolDefault === undefined || schoolDefault.id !== live.id,
+    `école : ${schoolDefault?.id ?? "aucune"}`,
+  );
+
+  const customer = (await stripe.customers.list({ limit: 1 }, scoped)).data[0];
+
+  if (!customer) {
+    check("un client existe pour éprouver la session", false, "aucun client");
+    return;
+  }
+
+  const session = await stripe.billingPortal.sessions.create(
+    {
+      customer: customer.id,
+      configuration: resolved,
+      return_url: process.env.NEXT_PUBLIC_APP_URL!,
+    },
+    scoped,
+  );
+
+  const pinned =
+    typeof session.configuration === "string"
+      ? session.configuration
+      : session.configuration.id;
+
+  check(
+    "une session parent est ÉPINGLÉE dessus, pas sur le défaut de l'école",
+    pinned === resolved,
+    `${pinned} au lieu de ${resolved}`,
+  );
 }
 
 main().then(

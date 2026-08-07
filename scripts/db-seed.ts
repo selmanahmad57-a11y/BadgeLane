@@ -486,18 +486,57 @@ async function seedOrganization(
       }
     }
 
-    if (!existing) {
-      await tx.insert(student).values(
-      DEMO.students.map((entry, index) => ({
-        organizationId,
-        familyId: createdFamily.id,
-        firstName: entry.firstName,
-        lastName: entry.lastName,
-        dateOfBirth: entry.dateOfBirth,
-        /** Seul le premier élève reçoit un niveau, pour montrer les deux cas. */
-        currentLevelId: index === 0 ? (firstLevel?.id ?? null) : null,
-      })),
-      );
+    /**
+     * Les élèves sont réconciliés un par un, et non créés en bloc.
+     *
+     * Une garde « si la famille existe, ne rien faire » avait un défaut réel :
+     * après avoir manipulé les données de démonstration à l'écran, relancer le
+     * seed annonçait avoir affecté un niveau sans rien faire. Un script qui
+     * rapporte un travail qu'il n'a pas accompli est pire qu'un script qui
+     * échoue — on lui fait confiance à tort.
+     */
+    const knownStudents = new Map(
+      (
+        await tx
+          .select({ id: student.id, firstName: student.firstName, currentLevelId: student.currentLevelId })
+          .from(student)
+          .where(eq(student.organizationId, organizationId))
+      ).map((row) => [row.firstName, row]),
+    );
+
+    let createdStudents = 0;
+    let restoredLevel = false;
+
+    for (const [index, entry] of DEMO.students.entries()) {
+      let record = knownStudents.get(entry.firstName);
+
+      if (!record) {
+        [record] = await tx
+          .insert(student)
+          .values({
+            organizationId,
+            familyId: createdFamily.id,
+            firstName: entry.firstName,
+            lastName: entry.lastName,
+            dateOfBirth: entry.dateOfBirth,
+          })
+          .returning({ id: student.id, firstName: student.firstName, currentLevelId: student.currentLevelId });
+        createdStudents += 1;
+      }
+
+      /**
+       * Seul le premier élève reçoit un niveau : la démonstration montre ainsi
+       * les deux cas, avec et sans. L'affectation est rétablie si elle a été
+       * défaite en manipulant l'écran — c'est précisément ce qu'on attend d'un
+       * jeu de démonstration qu'on relance.
+       */
+      if (index === 0 && firstLevel && record && !record.currentLevelId) {
+        await tx
+          .update(student)
+          .set({ currentLevelId: firstLevel.id })
+          .where(eq(student.id, record.id));
+        restoredLevel = true;
+      }
     }
 
     console.log(
@@ -505,9 +544,11 @@ async function seedOrganization(
         "Données de démonstration créées :",
         `  1 famille   ${DEMO.family.primaryGuardianName}`,
         `  2 tuteurs   ${DEMO.guardians.map((g) => g.name).join(", ")}`,
-        `  2 élèves    ${DEMO.students.map((s) => `${s.firstName} ${s.lastName}`).join(", ")}`,
+        `  élèves      ${createdStudents} créé(s), ${DEMO.students.length - createdStudents} déjà présent(s)`,
         firstLevel
-          ? `  niveau      « ${firstLevel.name} » affecté au premier élève`
+          ? restoredLevel
+            ? `  niveau      « ${firstLevel.name} » (r\u00e9)affect\u00e9 au premier \u00e9l\u00e8ve`
+            : `  niveau      « ${firstLevel.name} » d\u00e9j\u00e0 affect\u00e9`
           : "  niveau      aucun niveau existant : aucune affectation",
         existingTerm
           ? "  planning    déjà présent"

@@ -112,6 +112,7 @@ export const STUDENT_SCOPED_TABLES: readonly string[] = [
   "enrollment",
   "attendance",
   "skill_progress",
+  "makeup_credit",
 ];
 
 /**

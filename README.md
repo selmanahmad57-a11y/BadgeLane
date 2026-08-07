@@ -132,6 +132,7 @@ vide affichant le nom de l'école, ton rôle, son fuseau et sa devise.
 | `npm run attendance:verify` | Relevés de présence et remplacement du plus récent |
 | `npm run badges:verify` | Dérivation des badges quand le curriculum évolue |
 | `npm run parent-authz:verify` | Accès parent scopé famille, contrôle négatif compris |
+| `npm run makeup:verify` | Capacité d'une séance sous concurrence, niveau séance contre niveau cours |
 | `npm run billing:verify` | Doublon d'événement Stripe, séparation abonnement / facture, vue hors RLS |
 
 ---

@@ -46,3 +46,14 @@ export const SEAT_TAKING_STATUSES = [
 export function takesSeat(status: EnrollmentStatus): boolean {
   return (SEAT_TAKING_STATUSES as readonly string[]).includes(status);
 }
+
+/**
+ * Statuts qui ne figurent PAS sur une feuille de présence.
+ *
+ * Une inscription en attente n'a jamais commencé : il n'y a rien à relever.
+ * Extrait en configuration parce que `rosterWindowCondition` (TypeScript) et
+ * `count_occurrence_attendees` (SQL) doivent s'accorder — le SQL reçoit cette
+ * liste en argument plutôt que de la recopier, sinon les deux définitions du
+ * roster divergeraient le jour où l'une change.
+ */
+export const ROSTER_EXCLUDED_STATUSES = ["waitlisted"] as const;

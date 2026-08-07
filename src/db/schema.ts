@@ -22,6 +22,7 @@ import { STAFF_ROLES } from "@/config/roles";
 import { ATTENDANCE_STATUSES } from "@/config/attendance";
 import { TUITION_INTERVALS } from "@/config/billing";
 import { ENROLLMENT_STATUSES } from "@/config/enrollment";
+import { MAKEUP_CREDIT_STATUSES } from "@/config/makeup";
 import { PROGRESS_STATUSES } from "@/config/progress";
 import { OCCURRENCE_STATUSES } from "@/config/scheduling";
 
@@ -970,6 +971,91 @@ export const invoice = pgTable(
  * exigerait un contexte de tenant que le webhook n'a pas encore au moment de
  * s'en servir.
  */
+export const makeupCreditStatusEnum = pgEnum(
+  "makeup_credit_status",
+  MAKEUP_CREDIT_STATUSES,
+);
+
+/**
+ * Crédit de rattrapage : une absence signalée d'avance, à replacer ailleurs.
+ *
+ * ── Ce qui n'est pas stocké, et pourquoi ────────────────────────────────────
+ *
+ * Pas de statut « expiré ». Un crédit est utilisable s'il est `available` et
+ * que la session dont il est issu n'est pas terminée — un prédicat de lecture,
+ * jamais une transition. Aucune tâche de nuit à écrire, et aucune fenêtre
+ * pendant laquelle un crédit périmé paraîtrait valable faute de cron passé.
+ *
+ * Pas d'`expires_at` non plus : l'échéance se dérive de `term.end_date` de la
+ * séance manquée. Prolonger une session prolonge donc ses crédits, sans
+ * réécrire une ligne. Seul `extendedUntil` est stocké — et uniquement quand
+ * l'école décide explicitement d'aller au-delà.
+ *
+ * ── Les invariants sont des contraintes, pas des vérifications ──────────────
+ *
+ * Une absence ne donne qu'un crédit ; un enfant n'occupe pas deux places dans
+ * la même séance. Les deux sont des index uniques : le double-tap d'un pouce
+ * sur un réseau capricieux tombe sur une violation d'unicité, qui se traduit en
+ * message, plutôt que sur une seconde ligne.
+ */
+export const makeupCredit = pgTable(
+  "makeup_credit",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+
+    studentId: uuid("student_id")
+      .notNull()
+      .references(() => student.id, { onDelete: "cascade" }),
+
+    /** La séance manquée : elle porte la session, donc l'échéance. */
+    missedOccurrenceId: uuid("missed_occurrence_id")
+      .notNull()
+      .references(() => classOccurrence.id, { onDelete: "cascade" }),
+
+    /** La séance où le crédit a été replacé. Null tant qu'il est disponible. */
+    bookedOccurrenceId: uuid("booked_occurrence_id").references(
+      () => classOccurrence.id,
+      { onDelete: "set null" },
+    ),
+
+    status: makeupCreditStatusEnum("status").notNull().default("available"),
+
+    /**
+     * Prolongation décidée par l'école, au-delà de la fin de session.
+     *
+     * Nulle par défaut : l'échéance se dérive alors. Ce n'est pas une
+     * duplication de `term.end_date` mais une **décision**, et une décision se
+     * stocke — c'est la même distinction qu'entre un badge dérivé et une
+     * compétence cochée par un coach.
+     */
+    extendedUntil: date("extended_until"),
+
+    ...timestamps,
+  },
+  (table) => [
+    /** Une absence, un crédit. L'idempotence vient de là, pas d'un contrôle. */
+    uniqueIndex("makeup_credit_absence_key").on(
+      table.organizationId,
+      table.studentId,
+      table.missedOccurrenceId,
+    ),
+    /**
+     * Un enfant n'occupe pas deux places dans la même séance. Sans cet index,
+     * deux crédits distincts pourraient viser la même occurrence et y compter
+     * deux corps pour un seul enfant.
+     */
+    uniqueIndex("makeup_credit_one_seat_per_occurrence")
+      .on(table.organizationId, table.bookedOccurrenceId, table.studentId)
+      .where(sql`booked_occurrence_id is not null`),
+    index("makeup_credit_organization_id_idx").on(table.organizationId),
+    index("makeup_credit_booked_occurrence_idx").on(table.bookedOccurrenceId),
+    studentScopedPolicy("makeup_credit"),
+  ],
+);
+
 export const stripeEvent = pgTable(
   "stripe_event",
   {

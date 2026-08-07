@@ -169,6 +169,27 @@
       "when": 1786139712758,
       "tag": "0023_enrollment_review_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786144668669,
+      "tag": "0024_makeup_credit",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786144755980,
+      "tag": "0025_occurrence_counter_column",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786145002700,
+      "tag": "0026_force_rls_makeup_credit",
+      "breakpoints": true
     }
   ]
 }

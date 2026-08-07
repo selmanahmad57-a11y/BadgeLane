@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import {
   LIVE_ENROLLMENT_STATUSES,
@@ -83,18 +83,36 @@ export async function lockKlassAndCountSeats(
     throw new CrossTenantReferenceError("klass", klassId);
   }
 
-  const [occupied] = await tx
-    .select({ total: count() })
-    .from(enrollment)
-    .where(
-      and(
-        eq(enrollment.organizationId, organizationId),
-        eq(enrollment.klassId, klassId),
-        inArray(enrollment.status, [...SEAT_TAKING_STATUSES]),
-      ),
-    );
+  /**
+   * Le décompte passe par `count_seats_taken`, jamais par une lecture directe
+   * d'`enrollment`.
+   *
+   * ── Pourquoi, et ce que ça évite ────────────────────────────────────────────
+   *
+   * Depuis la Semaine 10, `enrollment` est restreinte aux enfants du foyer
+   * courant. Une lecture directe compterait donc, pour un parent, les places
+   * occupées **de sa propre famille** — zéro, presque toujours. Tout cours
+   * paraîtrait vide, et chaque parent entrerait dans un bassin complet. Sans
+   * erreur, sans log : la barrière ferait son travail, et ce serait le
+   * problème.
+   *
+   * La fonction s'exécute en `security definer`, donc hors RLS, mais **dans
+   * cette transaction** : même instantané, verrou tenu. Faire ce compte depuis
+   * une seconde connexion pour échapper à la RLS relirait hors du verrou et
+   * rouvrirait la course en silence.
+   *
+   * Les statuts sont passés en argument plutôt qu'écrits dans le SQL : le
+   * vocabulaire métier n'a qu'une définition, `SEAT_TAKING_STATUSES`.
+   */
+  const [occupied] = (
+    await tx.execute(
+      sql`select count_seats_taken(${klassId}::uuid, ${sql.param([
+        ...SEAT_TAKING_STATUSES,
+      ])}::text[]) as total`,
+    )
+  ).rows as unknown as { total: number }[];
 
-  const taken = occupied?.total ?? 0;
+  const taken = Number(occupied?.total ?? 0);
 
   return {
     capacity: target.capacity,

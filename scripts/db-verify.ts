@@ -1,4 +1,7 @@
 import { neonConfig, Pool } from "@neondatabase/serverless";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { config as loadEnvFile } from "dotenv";
 import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-serverless";
@@ -99,6 +102,18 @@ async function main(): Promise<number> {
       );
       problems.push(...guardProblems);
     }
+
+    /**
+     * 4. Le contexte de tenant est-il toujours posé LOCALEMENT à la transaction ?
+     *
+     * Ce contrôle ne lit pas la base : il lit le code source. Et c'est le seul
+     * moyen d'attraper la faille qu'il vise, parce qu'elle ne se manifeste ni en
+     * développement ni sous un test unitaire.
+     */
+    problems.push(...checkSessionContextDiscipline());
+    console.log(
+      "Code source — le contexte de tenant n'est posé que par withTenant/withFamily, et localement.",
+    );
 
     if (problems.length === 0) {
       console.log("\nIsolation multi-tenant : OK.");
@@ -348,6 +363,121 @@ function readProbeDefaults() {
   }
 
   return { timezone, currency, country, supportedLanguages };
+}
+
+/**
+ * Le seul module autorisé à poser un contexte de tenant applicatif.
+ * Tout le reste doit passer par `withTenant()` / `withFamily()`.
+ */
+const TENANT_CONTEXT_OWNER = "src/db/tenant.ts";
+
+/**
+ * Exception nommée : le module d'audit construit délibérément des contextes
+ * pour éprouver les politiques. Il les pose toujours localement, et c'est son
+ * métier — mais l'exception doit être écrite, pas tolérée en silence.
+ */
+const TENANT_CONTEXT_PROBES = ["src/db/isolation.ts"];
+
+/** Répertoires balayés : le code de l'application et celui des sondes. */
+const SCANNED_ROOTS = ["src", "scripts"];
+
+/**
+ * Motifs construits à l'exécution plutôt qu'écrits en littéraux.
+ *
+ * Sans cela, ce fichier se dénoncerait lui-même : la ligne qui décrit
+ * l'interdit la contient. Un contrôle qui échoue sur sa propre définition
+ * apprend à être ignoré — et un contrôle qu'on ignore ne protège plus rien.
+ */
+const SESSION_SCOPED_SET_CONFIG = new RegExp(
+  "set" + "_config\\([^)]*,\\s*false\\s*\\)",
+);
+const ANY_SET_CONFIG = new RegExp("set" + "_config\\(");
+const BARE_SQL_SET = new RegExp("\\bset\\s+app\\.current_", "i");
+
+/**
+ * Éprouve la discipline du contexte de session, en lisant le code.
+ *
+ * ── La faille visée ──────────────────────────────────────────────────────────
+ *
+ * `DATABASE_URL` passe par un pooler en **mode transaction** : les connexions
+ * physiques sont recyclées d'une transaction à l'autre, et entre des tenants
+ * différents. Un `set_config(…, false)` — de portée session — **survit donc au
+ * client qui l'a posé**, et la transaction suivante en hérite.
+ *
+ * Concrètement : l'école A pose son contexte, sa transaction s'achève, la
+ * connexion retourne au pool, l'école B l'emprunte — et lit les données de A.
+ * C'est la pire forme de fuite inter-tenant, parce qu'elle est **invisible en
+ * développement** : une seule connexion, aucune contention, tout marche. Elle
+ * n'apparaît qu'en production sous charge, et aucun test unitaire ne la voit.
+ *
+ * ── Pourquoi un contrôle sur le source, et non sur la base ───────────────────
+ *
+ * Il n'existe aucune trace en base d'un réglage mal posé : le mal est fait au
+ * moment de l'appel, et la requête suivante paraît parfaitement normale. Seul
+ * le code peut être interrogé. Même famille que le piège `.next` : un défaut
+ * qu'aucune assertion runtime n'atteint, et qui se garde donc en amont.
+ */
+function checkSessionContextDiscipline(): string[] {
+  const problems: string[] = [];
+
+  const walk = (directory: string): string[] =>
+    readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(directory, entry.name);
+      if (entry.isDirectory()) return walk(full);
+      return entry.isFile() && /\.(ts|tsx)$/.test(entry.name) ? [full] : [];
+    });
+
+  for (const root of SCANNED_ROOTS) {
+    for (const file of walk(root)) {
+      const relative = file.replace(/\\/g, "/");
+
+      readFileSync(file, "utf8")
+        .split("\n")
+        .forEach((line, index) => {
+          const trimmed = line.trim();
+
+          /** Les commentaires décrivent la règle ; ils ne l'enfreignent pas. */
+          if (trimmed.startsWith("*") || trimmed.startsWith("//")) return;
+
+          const at = `${relative}:${index + 1}`;
+
+          /**
+           * `false` en troisième argument = portée session. Interdit partout,
+           * sans exception : c'est la forme exacte qui fuite au pooler.
+           */
+          if (SESSION_SCOPED_SET_CONFIG.test(line)) {
+            problems.push(
+              `${at} : pose le contexte avec une portée SESSION — troisième argument à « false ». Derrière un pooler en mode transaction, ce réglage survit à la transaction, et la suivante — d'un autre tenant — en hérite. Passe « true », à l'intérieur d'une transaction.`,
+            );
+          }
+
+          /** Un `SET` SQL nu est de portée session par défaut : même faille. */
+          if (BARE_SQL_SET.test(line) && !ANY_SET_CONFIG.test(line)) {
+            problems.push(
+              `${at} : \`SET app.current_…\` est de portée session par défaut. Passe par \`set_config(…, true)\`, ou par withTenant()/withFamily().`,
+            );
+          }
+
+          /**
+           * Hors du module propriétaire et des sondes, personne ne pose de
+           * contexte à la main : les écritures et lectures applicatives
+           * passent par withTenant()/withFamily(), qui seuls savent le faire.
+           */
+          if (
+            ANY_SET_CONFIG.test(line) &&
+            relative.startsWith("src/") &&
+            relative !== TENANT_CONTEXT_OWNER &&
+            !TENANT_CONTEXT_PROBES.includes(relative)
+          ) {
+            problems.push(
+              `${at} : pose un contexte de tenant hors de ${TENANT_CONTEXT_OWNER}. Un second endroit qui sait le faire est un second endroit où l'oublier.`,
+            );
+          }
+        });
+    }
+  }
+
+  return problems;
 }
 
 main().then(

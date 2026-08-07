@@ -43,8 +43,23 @@ type Fixture = {
   studentIds: [string, string];
 };
 
+/**
+ * Pose le contexte d'école **pour la transaction en cours**, jamais pour la
+ * session.
+ *
+ * Cette sonde a longtemps utilisé la portée session. Elle fonctionnait — chaque
+ * appel suit un `begin` de toute façon — mais elle reproduisait la forme
+ * exacte de la faille que le produit évite : `DATABASE_URL` passe par un pooler
+ * en mode transaction, où les connexions physiques sont recyclées **entre
+ * tenants**. Un réglage de session y survit à la transaction, et la suivante en
+ * hérite.
+ *
+ * Une sonde qui n'obéit pas à la règle qu'elle est censée éprouver finit par
+ * mesurer autre chose que le produit. `db:verify` refuse désormais cette forme
+ * partout — c'est lui qui a signalé cette ligne.
+ */
 async function setTenant(client: PoolClient, organizationId: string) {
-  await client.query("select set_config($1, $2, false)", [
+  await client.query("select set_config($1, $2, true)", [
     TENANT_CONTEXT_SETTING,
     organizationId,
   ]);

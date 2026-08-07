@@ -1,21 +1,35 @@
 /**
  * Rattrapages : le cycle de vie d'un crédit d'absence.
  *
- * ── Trois états, et pas quatre ───────────────────────────────────────────────
+ * ── DEUX états stockés, quatre états lus ─────────────────────────────────────
  *
- * `available → booked → used`. « Expiré » n'en fait **pas** partie, et c'est la
- * décision structurante de ce module.
+ * Stockés : `available` et `booked`. Rien d'autre.
  *
- * Un crédit est utilisable si — et seulement si — il est `available` **et** que
- * la session dont il est issu n'est pas terminée. C'est un prédicat de lecture,
- * pas une transition : aucune tâche planifiée n'a besoin de passer les crédits
- * en « expiré » la nuit venue, et il n'existe aucune fenêtre pendant laquelle
- * un crédit périmé paraîtrait encore valable parce que le cron n'est pas passé.
+ * « Expiré » et « consommé » sont **dérivés**, et ce n'est pas une coquetterie —
+ * c'est ce qui rend correct le cas qui compte :
+ *
+ *   disponible  = available ET session non terminée
+ *   réservé     = booked ET séance cible à venir ET non annulée
+ *   consommé    = booked ET séance cible passée ET non annulée
+ *   expiré      = available ET session terminée
+ *
+ * ── Le cas qui justifie tout : la séance cible annulée ───────────────────────
+ *
+ * Un crédit réservé sur une séance que l'école annule doit **redevenir
+ * réservable**. En dérivant, c'est gratuit : la cible annulée sort des trois
+ * autres branches, et le crédit se rouvre tout seul.
+ *
+ * Un `used` stocké obligerait à écrire un processus pour *défaire* la
+ * consommation à chaque annulation — et ce processus oublierait un cas. Une
+ * transition qu'on n'a pas écrite ne peut pas être oubliée.
+ *
+ * Aucune tâche de nuit non plus, et aucune fenêtre pendant laquelle un crédit
+ * périmé paraîtrait valable parce que le cron n'est pas encore passé.
  *
  * Même règle que le DST, les badges et le rang de liste d'attente : on ne
  * matérialise pas ce qu'une requête peut dériver.
  */
-export const MAKEUP_CREDIT_STATUSES = ["available", "booked", "used"] as const;
+export const MAKEUP_CREDIT_STATUSES = ["available", "booked"] as const;
 
 export type MakeupCreditStatus = (typeof MAKEUP_CREDIT_STATUSES)[number];
 
@@ -49,3 +63,29 @@ export const MAKEUP_OCCUPYING_STATUSES = ["booked"] as const;
  * `extended_until` — et garde la main, comme partout ailleurs.
  */
 export const MAKEUP_EXPIRY_SOURCE = "term.end_date";
+
+/**
+ * États **lus** d'un crédit — dérivés, jamais stockés.
+ *
+ * L'ordre compte : un crédit dont la cible est annulée redevient disponible,
+ * et cette branche doit être évaluée avant « consommé ».
+ */
+export const MAKEUP_DERIVED_STATES = [
+  "available",
+  "booked",
+  "used",
+  "expired",
+] as const;
+
+export type MakeupDerivedState = (typeof MAKEUP_DERIVED_STATES)[number];
+
+/**
+ * Un crédit ne naît que d'une séance où l'élève est **régulièrement inscrit**.
+ *
+ * Sans cette borne, un rattrapage engendrerait un rattrapage : la séance de
+ * rattrapage est elle-même une occurrence future, le parent y signalerait une
+ * absence, et l'on fabriquerait un second crédit — puis un troisième. La
+ * génération est donc adossée au roster d'inscription (Semaine 6), jamais aux
+ * réservations.
+ */
+export const MAKEUP_CREDIT_REQUIRES_ENROLMENT = true;

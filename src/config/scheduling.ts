@@ -61,6 +61,15 @@ export function orderedDaysOfWeek(locale: Locale): DayOfWeek[] {
 /** Statuts d'une séance datée. */
 export const OCCURRENCE_STATUSES = ["scheduled", "cancelled"] as const;
 
+/**
+ * Le statut d'une séance qui n'aura pas lieu.
+ *
+ * Nommé plutôt qu'écrit en littéral : la dérivation de l'état d'un crédit de
+ * rattrapage en dépend — une séance cible annulée rouvre le crédit — et ce
+ * genre de lien mérite d'être suivi par le compilateur.
+ */
+export const CANCELLED_OCCURRENCE_STATUS = "cancelled" as const;
+
 export type OccurrenceStatus = (typeof OCCURRENCE_STATUSES)[number];
 
 /**

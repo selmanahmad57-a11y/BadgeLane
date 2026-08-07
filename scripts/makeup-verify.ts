@@ -9,6 +9,8 @@ import {
   SEAT_TAKING_STATUSES,
 } from "../src/config/enrollment";
 import { MAKEUP_OCCUPYING_STATUSES } from "../src/config/makeup";
+import { makeupCreditState } from "../src/lib/makeup";
+import { UNIQUE_VIOLATION_SQLSTATE as UNIQUE_VIOLATION } from "../src/config/database";
 
 /**
  * Éprouve la capacité d'une SÉANCE face à deux rattrapages simultanés.
@@ -228,6 +230,54 @@ async function main(): Promise<number> {
   let naive: Fixture | null = null;
 
   try {
+    // ── La machine à états, dérivée ───────────────────────────────────────
+    //
+    // Deux valeurs stockées, quatre états lus. Cette partie est de la logique
+    // pure : aucune base, donc entièrement vérifiable — et c'est voulu, parce
+    // que c'est elle qui décide si un crédit est utilisable.
+
+    console.log("\nÉtats dérivés d'un crédit");
+
+    const today = "2026-10-01";
+    const base = { usableThrough: "2026-12-01", bookedOn: null, bookedOccurrenceStatus: null, today };
+
+    check(
+      "disponible : available, session en cours",
+      makeupCreditState({ ...base, status: "available" }) === "available",
+    );
+    check(
+      "expiré : available, session terminée",
+      makeupCreditState({ ...base, status: "available", usableThrough: "2026-09-01" }) === "expired",
+    );
+    check(
+      "réservé : booked, séance à venir",
+      makeupCreditState({ ...base, status: "booked", bookedOn: "2026-11-01", bookedOccurrenceStatus: "scheduled" }) === "booked",
+    );
+    check(
+      "consommé : booked, séance passée",
+      makeupCreditState({ ...base, status: "booked", bookedOn: "2026-09-15", bookedOccurrenceStatus: "scheduled" }) === "used",
+    );
+
+    /**
+     * LE cas qui justifie la dérivation. Un `used` stocké obligerait à écrire
+     * un processus pour défaire la consommation — et il oublierait ce cas.
+     */
+    check(
+      "séance cible ANNULÉE : le crédit redevient disponible",
+      makeupCreditState({ ...base, status: "booked", bookedOn: "2026-09-15", bookedOccurrenceStatus: "cancelled" }) === "available",
+      makeupCreditState({ ...base, status: "booked", bookedOn: "2026-09-15", bookedOccurrenceStatus: "cancelled" }),
+    );
+    check(
+      "annulée après la fin de session : expiré, pas disponible",
+      makeupCreditState({ ...base, status: "booked", usableThrough: "2026-09-01", bookedOn: "2026-08-20", bookedOccurrenceStatus: "cancelled" }) === "expired",
+    );
+
+    /** L'échéance se compare en dates CIVILES, jamais en instants. */
+    check(
+      "le dernier jour de session, le crédit vaut encore",
+      makeupCreditState({ ...base, status: "available", usableThrough: today }) === "available",
+    );
+
     console.log("\nDeux rattrapages sur la dernière place d'une SÉANCE");
 
     correct = await createFixture(setup, defaults);
@@ -259,6 +309,108 @@ async function main(): Promise<number> {
       "l'un des deux a vu la séance déjà pleine",
       results.some((entry) => entry.seen === correct!.capacity),
       results.map((entry) => `vu ${entry.seen}`).join(" / "),
+    );
+
+    // ── Les invariants sont des contraintes, pas des contrôles ────────────
+
+    console.log("\nLes invariants tiennent par la base, pas par du code");
+
+    await open(setup, correct.organizationId, "");
+
+    /** Le double-tap : la même absence, deux fois. */
+    const missed = (await setup.query(
+      "select missed_occurrence_id, student_id from makeup_credit where id = $1",
+      [correct.creditIds[0]],
+    )).rows[0];
+
+    await setup.query("savepoint duplicate_absence");
+    const twice = await setup
+      .query(
+        `insert into makeup_credit (organization_id, student_id, missed_occurrence_id)
+         values ($1, $2, $3)`,
+        [correct.organizationId, missed.student_id, missed.missed_occurrence_id],
+      )
+      .then(() => "acceptée")
+      .catch((error: { code?: string }) => error.code ?? "refusée");
+    await setup.query("rollback to savepoint duplicate_absence");
+
+    check(
+      "signaler deux fois la même absence ne crée qu'un crédit",
+      twice === UNIQUE_VIOLATION,
+      `${twice} — attendu ${UNIQUE_VIOLATION}`,
+    );
+
+    /** Deux crédits distincts ne peuvent pas viser la même séance. */
+    const booked = (await setup.query(
+      "select id, student_id from makeup_credit where booked_occurrence_id = $1",
+      [correct.occurrenceId],
+    )).rows[0];
+
+    /** Une TROISIÈME séance : la sonde ne doit pas buter sur sa propre unicité. */
+    const anotherMissed = (await setup.query(
+      `insert into class_occurrence (organization_id, klass_id, date, status)
+       values ($1, (select klass_id from class_occurrence where id = $2), '2026-09-22', 'scheduled')
+       returning id`,
+      [correct.organizationId, correct.occurrenceId],
+    )).rows[0].id;
+
+    const spareCredit = (await setup.query(
+      `insert into makeup_credit (organization_id, student_id, missed_occurrence_id)
+       values ($1, $2, $3) returning id`,
+      [correct.organizationId, booked.student_id, anotherMissed],
+    )).rows[0].id;
+
+    await setup.query("savepoint double_seat");
+    const twoSeats = await setup
+      .query(
+        `update makeup_credit set booked_occurrence_id = $1, status = 'booked' where id = $2`,
+        [correct.occurrenceId, spareCredit],
+      )
+      .then(() => "acceptée")
+      .catch((error: { code?: string }) => error.code ?? "refusée");
+    await setup.query("rollback to savepoint double_seat");
+
+    check(
+      "un enfant n'occupe pas deux places dans la même séance",
+      twoSeats === UNIQUE_VIOLATION,
+      `${twoSeats} — attendu ${UNIQUE_VIOLATION}`,
+    );
+
+    await setup.query("commit");
+
+    // ── La séance cible annulée, en base cette fois ───────────────────────
+
+    console.log("\nLa séance cible annulée rouvre le crédit — en base");
+
+    await open(setup, correct.organizationId, "");
+    await setup.query(
+      "update class_occurrence set status = 'cancelled' where id = $1",
+      [correct.occurrenceId],
+    );
+
+    const reopened = (await setup.query(
+      `select m.status, o.status as target_status, o.date as booked_on
+         from makeup_credit m
+         join class_occurrence o on o.id = m.booked_occurrence_id
+        where m.booked_occurrence_id = $1`,
+      [correct.occurrenceId],
+    )).rows[0];
+    await setup.query("commit");
+
+    check(
+      "le statut STOCKÉ n'a pas bougé — aucune transition n'a été écrite",
+      reopened.status === "booked",
+      String(reopened.status),
+    );
+    check(
+      "et l'état LU est redevenu disponible",
+      makeupCreditState({
+        status: "booked",
+        usableThrough: "2026-12-01",
+        bookedOn: String(reopened.booked_on).slice(0, 10),
+        bookedOccurrenceStatus: reopened.target_status,
+        today: "2026-10-01",
+      }) === "available",
     );
 
     console.log(

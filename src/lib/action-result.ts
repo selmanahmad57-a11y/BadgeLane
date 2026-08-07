@@ -55,6 +55,8 @@ export const ACTION_REASONS = [
   "invitationRejected",
   /** La session produirait trop de séances. */
   "tooManyOccurrences",
+  /** Aucune clé Stripe sur cette instance. */
+  "stripeNotConfigured",
 ] as const;
 
 export type ActionReason = (typeof ACTION_REASONS)[number];

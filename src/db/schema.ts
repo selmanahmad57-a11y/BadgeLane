@@ -19,6 +19,7 @@ import {
 import { TENANT_CONTEXT_SETTING } from "@/config/database";
 import { STAFF_ROLES } from "@/config/roles";
 import { ATTENDANCE_STATUSES } from "@/config/attendance";
+import { TUITION_INTERVALS } from "@/config/billing";
 import { ENROLLMENT_STATUSES } from "@/config/enrollment";
 import { PROGRESS_STATUSES } from "@/config/progress";
 import { OCCURRENCE_STATUSES } from "@/config/scheduling";
@@ -294,6 +295,13 @@ export const family = pgTable(
     phone: text("phone"),
 
     preferredLanguage: text("preferred_language").notNull(),
+
+    /**
+     * Client Stripe du foyer, créé au premier paiement. Repoussé en Semaine 3
+     * faute de sens à l'époque : sa valeur ne se définissait qu'avec la
+     * facturation.
+     */
+    stripeCustomerId: text("stripe_customer_id"),
 
     ...timestamps,
   },
@@ -697,6 +705,150 @@ export const skillProgress = pgTable(
   ],
 );
 
+export const tuitionIntervalEnum = pgEnum(
+  "tuition_interval",
+  TUITION_INTERVALS,
+);
+
+/** Un tarif de scolarité, adossé à un prix Stripe. */
+export const tuitionPlan = pgTable(
+  "tuition_plan",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+
+    name: text("name").notNull(),
+    /**
+     * Montant en plus petite unité monétaire — centimes pour un dollar ou un
+     * euro. Jamais un nombre à virgule : additionner des flottants finit
+     * toujours par produire un centime qui n'existe pas.
+     *
+     * La devise n'est pas répétée ici : c'est celle de l'école.
+     */
+    amount: integer("amount").notNull(),
+    interval: tuitionIntervalEnum("interval").notNull(),
+
+    /** Prix Stripe correspondant. Null tant qu'il n'a pas été créé. */
+    stripePriceId: text("stripe_price_id"),
+
+    active: boolean("active").notNull().default(true),
+
+    ...timestamps,
+  },
+  (table) => [
+    index("tuition_plan_organization_id_idx").on(table.organizationId),
+    tenantIsolationPolicy("tuition_plan", "organization_id"),
+  ],
+);
+
+/**
+ * Miroir d'un abonnement Stripe.
+ *
+ * Rien ici n'est décidé par BadgeLane : `status` et `currentPeriodEnd` sont
+ * recopiés de Stripe, qui détient la vérité. `status` est un `text` et non un
+ * enum — c'est le vocabulaire de Stripe, et le figer imposerait une migration
+ * le jour où il s'enrichit.
+ */
+export const subscription = pgTable(
+  "subscription",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    familyId: uuid("family_id")
+      .notNull()
+      .references(() => family.id, { onDelete: "cascade" }),
+    tuitionPlanId: uuid("tuition_plan_id").references(() => tuitionPlan.id, {
+      onDelete: "set null",
+    }),
+
+    stripeSubscriptionId: text("stripe_subscription_id").notNull(),
+    status: text("status").notNull(),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+
+    ...timestamps,
+  },
+  (table) => [
+    /** Un abonnement Stripe ne se reflète qu'une fois : rejeu sûr. */
+    uniqueIndex("subscription_stripe_id_key").on(
+      table.organizationId,
+      table.stripeSubscriptionId,
+    ),
+    index("subscription_organization_id_idx").on(table.organizationId),
+    index("subscription_family_id_idx").on(table.familyId),
+    tenantIsolationPolicy("subscription", "organization_id"),
+  ],
+);
+
+/** Miroir d'une facture Stripe. En lecture seule côté BadgeLane. */
+export const invoice = pgTable(
+  "invoice",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    familyId: uuid("family_id")
+      .notNull()
+      .references(() => family.id, { onDelete: "cascade" }),
+
+    stripeInvoiceId: text("stripe_invoice_id").notNull(),
+    amount: integer("amount").notNull(),
+    /** Devise de la facture, telle que Stripe l'a émise. */
+    currency: text("currency").notNull(),
+    status: text("status").notNull(),
+
+    dueDate: timestamp("due_date", { withTimezone: true }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("invoice_stripe_id_key").on(
+      table.organizationId,
+      table.stripeInvoiceId,
+    ),
+    index("invoice_organization_id_idx").on(table.organizationId),
+    index("invoice_family_id_idx").on(table.familyId),
+    tenantIsolationPolicy("invoice", "organization_id"),
+  ],
+);
+
+/**
+ * Registre des événements Stripe déjà traités.
+ *
+ * ── L'état invalide est rendu impossible ─────────────────────────────────────
+ *
+ * `processedAt` est `NOT NULL`, et la ligne est écrite **dans la même
+ * transaction** que le miroir qu'elle décrit. Une ligne à demi traitée ne peut
+ * donc pas exister : soit tout est commis, soit rien ne l'est.
+ *
+ * C'est ce qui rend le retry de Stripe sans danger et sans logique
+ * particulière. Le schéma précédent — insérer d'abord, marquer ensuite —
+ * laissait une fenêtre où un plantage produisait une ligne avec `processed_at`
+ * nul ; au retry, la voir aurait fait sauter un événement jamais traité, et
+ * perdre une mise à jour de paiement en silence.
+ *
+ * La clé primaire est l'identifiant de l'événement : un doublon est une
+ * violation de contrainte, donc impossible plutôt que détecté.
+ *
+ * Pas de politique RLS ni d'`organization_id` : ce registre ne porte aucune
+ * donnée d'école, seulement des identifiants d'événements. L'y rattacher
+ * exigerait un contexte de tenant que le webhook n'a pas encore au moment de
+ * s'en servir.
+ */
+export const stripeEvent = pgTable("stripe_event", {
+  /** Identifiant Stripe (`evt_…`), clé primaire à dessein. */
+  id: text("id").primaryKey(),
+  type: text("type").notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export type Organization = typeof organization.$inferSelect;
 export type NewOrganization = typeof organization.$inferInsert;
 export type StaffUser = typeof staffUser.$inferSelect;
@@ -727,3 +879,7 @@ export type Attendance = typeof attendance.$inferSelect;
 export type NewAttendance = typeof attendance.$inferInsert;
 export type SkillProgress = typeof skillProgress.$inferSelect;
 export type NewSkillProgress = typeof skillProgress.$inferInsert;
+export type TuitionPlan = typeof tuitionPlan.$inferSelect;
+export type NewTuitionPlan = typeof tuitionPlan.$inferInsert;
+export type Subscription = typeof subscription.$inferSelect;
+export type Invoice = typeof invoice.$inferSelect;

@@ -64,6 +64,11 @@
 
 ### Semaine 9 — Facturation 2 : relances & paiement parent ⭐
 🎯 Récupérer les paiements ratés automatiquement.
+➕ **Fast-follow S8** : facturation au trimestre / à la session (paiement unique
+d'avance). Beaucoup d'écoles de natation facturent ainsi plutôt qu'au mois. Ce
+n'est **pas** un abonnement récurrent : à construire via les *Invoices*
+ponctuelles de Stripe, pas les *Subscriptions* — d'où le report de
+`tuition_plan.interval = term` hors de la Semaine 8.
 🛠️ Séquence de **dunning** (J0/J+2/J+5) sur `payment_failed` · **liens text-to-pay** · gestion du moyen de paiement côté parent (Stripe Customer Portal) · jobs planifiés.
 ✅ *Done :* un paiement échoué déclenche seul la relance + le lien pour repayer.
 

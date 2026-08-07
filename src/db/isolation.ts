@@ -39,6 +39,34 @@ export type TenantIsolationReport = {
 const MIGRATIONS_TABLE = "__drizzle_migrations";
 
 /**
+ * Tables sans `organization_id`, et donc hors du périmètre de la RLS.
+ *
+ * L'exemption n'est pas décrétée : elle est **dérivée**. Une table dépourvue de
+ * colonne d'organisation ne peut pas fuiter entre écoles, faute d'avoir quoi
+ * que ce soit à attribuer à l'une plutôt qu'à l'autre.
+ *
+ * Cette liste sert au contrôle **inverse**, plus utile : toute table sans
+ * `organization_id` qui n'y figure pas est signalée. Un oubli — créer une table
+ * métier et omettre sa colonne d'organisation — devient donc visible, alors
+ * qu'une simple liste d'exclusions l'aurait masqué.
+ */
+/**
+ * L'école est le tenant : sa colonne d'isolation est `id`, pas
+ * `organization_id`. Elle est donc bien dans le périmètre de la RLS, mais par
+ * une autre colonne.
+ */
+const TENANT_ROOT_TABLE = "organization";
+
+const TENANT_FREE_TABLES: Readonly<Record<string, string>> = {
+  stripe_event:
+    "registre d'idempotence des webhooks : ne contient que des identifiants d'événements Stripe, et doit être lisible avant qu'un contexte de tenant soit résolu",
+};
+
+/** Colonnes attendues de la vue de résolution du webhook — et rien de plus. */
+const STRIPE_LOOKUP_VIEW = "stripe_account_lookup";
+const STRIPE_LOOKUP_COLUMNS = ["organization_id", "stripe_account_id"];
+
+/**
  * Contrôle trois propriétés qu'une migration oubliée ferait sauter en silence :
  *
  *  1. RLS activée sur chaque table applicative ;
@@ -99,8 +127,51 @@ export async function checkTenantIsolation(
     where schemaname = current_schema()
   `);
 
+  /** Quelles tables portent réellement une colonne d'organisation ? */
+  const tenantColumnRows = await executor.execute(sql`
+    select table_name as tablename
+    from information_schema.columns
+    where table_schema = current_schema()
+      and column_name = 'organization_id'
+  `);
+
+  /** La vue de résolution du webhook n'expose-t-elle que deux identifiants ? */
+  const viewColumnRows = await executor.execute(sql`
+    select column_name
+    from information_schema.columns
+    where table_schema = current_schema()
+      and table_name = ${STRIPE_LOOKUP_VIEW}
+    order by ordinal_position
+  `);
+
   const tables = tableRows.rows as unknown as TableSecurityRow[];
   const policies = policyRows.rows as unknown as PolicyRow[];
+  const tenantColumns = new Set(
+    (tenantColumnRows.rows as unknown as { tablename: string }[]).map(
+      (row) => row.tablename,
+    ),
+  );
+
+  const viewColumns = (
+    viewColumnRows.rows as unknown as { column_name: string }[]
+  ).map((row) => row.column_name);
+
+  /**
+   * La vue échappe volontairement à la RLS : c'est le seul moyen pour un
+   * webhook, qui n'a pas de session, de résoudre l'école d'un compte Stripe.
+   * L'exception ne tient que tant qu'elle reste minimale — d'où ce contrôle.
+   */
+  if (viewColumns.length > 0) {
+    const unexpected = viewColumns.filter(
+      (column) => !STRIPE_LOOKUP_COLUMNS.includes(column),
+    );
+
+    if (unexpected.length > 0) {
+      problems.push(
+        `${STRIPE_LOOKUP_VIEW} : expose « ${unexpected.join(", ") } » en plus des identifiants attendus. Cette vue échappe à la RLS : elle ne doit jamais porter de donnée d'école.`,
+      );
+    }
+  }
 
   if (tables.length === 0) {
     problems.push(
@@ -109,6 +180,23 @@ export async function checkTenantIsolation(
   }
 
   for (const table of tables) {
+    /**
+     * Une table sans colonne d'organisation est hors périmètre — mais il faut
+     * l'avoir dit. Sinon, oublier `organization_id` sur une vraie table métier
+     * la rendrait silencieusement exempte de toute isolation.
+     */
+    if (
+      table.tablename !== TENANT_ROOT_TABLE &&
+      !tenantColumns.has(table.tablename)
+    ) {
+      if (!(table.tablename in TENANT_FREE_TABLES)) {
+        problems.push(
+          `${table.tablename} : aucune colonne « organization_id », et la table n'est pas déclarée comme telle dans TENANT_FREE_TABLES. Oubli, ou exception à documenter ?`,
+        );
+      }
+      continue;
+    }
+
     if (!table.rls_enabled) {
       problems.push(`${table.tablename} : RLS non activée.`);
     }

@@ -21,6 +21,7 @@ export const routes = {
   curriculum: "/curriculum",
   locations: "/locations",
   staff: "/staff",
+  billing: "/billing",
 } as const;
 
 /** Chemin d'une fiche famille. */
@@ -49,6 +50,7 @@ export const AUTHENTICATED_ROUTES: readonly AppRoute[] = [
   routes.curriculum,
   routes.locations,
   routes.staff,
+  routes.billing,
 ];
 
 /**
@@ -64,6 +66,7 @@ export const ORGANIZATION_SCOPED_ROUTES: readonly AppRoute[] = [
   routes.curriculum,
   routes.locations,
   routes.staff,
+  routes.billing,
 ];
 
 /** Entrées de la navigation principale de la console d'administration. */
@@ -76,6 +79,7 @@ export const CONSOLE_NAVIGATION = [
   { route: routes.curriculum, messageKey: "curriculum" },
   { route: routes.locations, messageKey: "locations" },
   { route: routes.staff, messageKey: "staff" },
+  { route: routes.billing, messageKey: "billing" },
 ] as const;
 
 /**

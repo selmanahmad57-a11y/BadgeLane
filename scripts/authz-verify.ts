@@ -45,6 +45,7 @@ const EXPECTED: Record<StaffRole, Record<Capability, boolean>> = {
     "schedule:write": true,
     "attendance:write": true,
     "progression:write": true,
+    "billing:manage": true,
   },
   admin: {
     "curriculum:write": true,
@@ -54,6 +55,7 @@ const EXPECTED: Record<StaffRole, Record<Capability, boolean>> = {
     "schedule:write": true,
     "attendance:write": true,
     "progression:write": true,
+    "billing:manage": true,
   },
   /**
    * Deux crans, et deux seulement : la présence (Semaine 6) et les compétences
@@ -67,6 +69,8 @@ const EXPECTED: Record<StaffRole, Record<Capability, boolean>> = {
     "schedule:write": false,
     "attendance:write": true,
     "progression:write": true,
+    /** L'argent de l'école ne regarde pas le coach. */
+    "billing:manage": false,
   },
 };
 

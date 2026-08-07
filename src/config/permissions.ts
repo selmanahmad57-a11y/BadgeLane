@@ -26,6 +26,8 @@ export const CAPABILITIES = [
   "attendance:write",
   /** Valider les compétences acquises. */
   "progression:write",
+  /** Connecter le compte Stripe de l'école et gérer les tarifs. */
+  "billing:manage",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -45,6 +47,7 @@ const CAPABILITIES_BY_ROLE: Readonly<Record<StaffRole, readonly Capability[]>> =
       "schedule:write",
       "attendance:write",
       "progression:write",
+      "billing:manage",
     ],
     admin: [
       "curriculum:write",
@@ -54,6 +57,7 @@ const CAPABILITIES_BY_ROLE: Readonly<Record<StaffRole, readonly Capability[]>> =
       "schedule:write",
       "attendance:write",
       "progression:write",
+      "billing:manage",
     ],
     /**
      * Le coach écrit deux choses, et deux seulement : la présence et les

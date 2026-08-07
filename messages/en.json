@@ -32,7 +32,8 @@
     "staff": "Staff",
     "schedule": "Schedule",
     "terms": "Terms",
-    "today": "Today"
+    "today": "Today",
+    "billing": "Billing"
   },
   "families": {
     "heading": "Families",
@@ -259,7 +260,8 @@
     "cannotEditSelf": "You cannot change your own access. Ask another owner or administrator.",
     "emailInvalid": "That email address does not look valid.",
     "invitationRejected": "This address has already been invited, or already belongs to the school.",
-    "tooManyOccurrences": "This term would create {count} sessions, above the limit of {limit}. Check its dates."
+    "tooManyOccurrences": "This term would create {count} sessions, above the limit of {limit}. Check its dates.",
+    "stripeNotConfigured": "Billing is not set up on this installation yet."
   },
   "today": {
     "heading": "Today at the pool",
@@ -287,5 +289,27 @@
     "inProgress": "working on it",
     "skillCount": "{achieved} of {total} skills",
     "noCurriculum": "No levels have been set up yet. Add programs and levels from the curriculum."
+  },
+  "billing": {
+    "heading": "Billing",
+    "intro": "Connect your school's Stripe account. Tuition goes straight to you — BadgeLane never holds your money.",
+    "notConfiguredHeading": "Billing not available",
+    "notConfiguredBody": "This installation has no Stripe keys configured. Add them to enable billing.",
+    "notStartedHeading": "Not connected yet",
+    "notStartedBody": "Connect a Stripe account to start collecting tuition. Stripe will ask for your bank and identity details on their own secure pages.",
+    "incompleteHeading": "Onboarding unfinished",
+    "incompleteBody": "Stripe still needs some details before your school can take payments. Pick up where you left off.",
+    "readyHeading": "Ready to collect",
+    "readyBody": "Your Stripe account is connected and can accept payments.",
+    "accountLabel": "Stripe account",
+    "chargesLabel": "Payments",
+    "chargesEnabled": "Enabled",
+    "chargesDisabled": "Not yet enabled",
+    "payoutsLabel": "Payouts",
+    "payoutsEnabled": "Enabled",
+    "payoutsDisabled": "Not yet enabled",
+    "connect": "Connect Stripe",
+    "resume": "Finish setting up",
+    "merchantNote": "Your school is the merchant of record: tuition is paid to your Stripe account, and BadgeLane takes no cut of it. Card details never touch our servers."
   }
 }

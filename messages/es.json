@@ -32,7 +32,8 @@
     "staff": "Personal",
     "schedule": "Horario",
     "terms": "Periodos",
-    "today": "Hoy"
+    "today": "Hoy",
+    "billing": "Facturación"
   },
   "families": {
     "heading": "Familias",
@@ -259,7 +260,8 @@
     "cannotEditSelf": "No puedes cambiar tu propio acceso. Pídeselo a otro propietario o administrador.",
     "emailInvalid": "Esa dirección de correo no parece válida.",
     "invitationRejected": "Esta dirección ya ha sido invitada o ya pertenece a la escuela.",
-    "tooManyOccurrences": "Este periodo crearía {count} sesiones, por encima del límite de {limit}. Revisa sus fechas."
+    "tooManyOccurrences": "Este periodo crearía {count} sesiones, por encima del límite de {limit}. Revisa sus fechas.",
+    "stripeNotConfigured": "La facturación aún no está configurada en esta instalación."
   },
   "today": {
     "heading": "Hoy en la piscina",
@@ -287,5 +289,27 @@
     "inProgress": "en progreso",
     "skillCount": "{achieved} de {total} habilidades",
     "noCurriculum": "Todavía no hay niveles configurados. Añade programas y niveles desde el plan de estudios."
+  },
+  "billing": {
+    "heading": "Facturación",
+    "intro": "Conecta la cuenta de Stripe de tu escuela. Las mensualidades van directamente a ti: BadgeLane nunca retiene tu dinero.",
+    "notConfiguredHeading": "Facturación no disponible",
+    "notConfiguredBody": "Esta instalación no tiene claves de Stripe configuradas. Añádelas para activar la facturación.",
+    "notStartedHeading": "Todavía sin conectar",
+    "notStartedBody": "Conecta una cuenta de Stripe para empezar a cobrar. Stripe te pedirá tus datos bancarios y de identidad en sus propias páginas seguras.",
+    "incompleteHeading": "Configuración incompleta",
+    "incompleteBody": "Stripe aún necesita algunos datos antes de que tu escuela pueda cobrar. Continúa donde lo dejaste.",
+    "readyHeading": "Listo para cobrar",
+    "readyBody": "Tu cuenta de Stripe está conectada y puede aceptar pagos.",
+    "accountLabel": "Cuenta de Stripe",
+    "chargesLabel": "Pagos",
+    "chargesEnabled": "Activados",
+    "chargesDisabled": "Aún no activados",
+    "payoutsLabel": "Transferencias",
+    "payoutsEnabled": "Activadas",
+    "payoutsDisabled": "Aún no activadas",
+    "connect": "Conectar Stripe",
+    "resume": "Terminar la configuración",
+    "merchantNote": "Tu escuela es el comercio titular: las mensualidades se abonan en tu cuenta de Stripe y BadgeLane no se queda con nada. Los datos de tarjeta nunca pasan por nuestros servidores."
   }
 }

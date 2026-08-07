@@ -367,6 +367,7 @@
     "enrolNote": "Places shown are indicative. If the class fills up before you tap, your child joins the waiting list rather than getting an error — nobody is ever squeezed into a full pool.",
     "status_active": "Enrolled",
     "status_waitlisted": "Waiting list",
-    "status_paused": "Paused"
+    "status_paused": "Paused",
+    "waitlistPosition": "Waiting list · #{rank}"
   }
 }

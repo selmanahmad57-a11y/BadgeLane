@@ -80,6 +80,9 @@ export type PortalEnrollment = {
   dayOfWeek: number;
   startTime: string;
   status: string;
+  klassId: string;
+  /** Rang dans la file — `null` hors liste d'attente. */
+  waitlistRank: number | null;
 };
 
 /**
@@ -148,10 +151,12 @@ export async function getPortalClasses(
  * par `waitlisted_at`. Sous contexte famille, le parent ne voit que les
  * siennes : le calcul rendrait « 1 » à tout le monde, en permanence.
  *
- * C'est exactement le piège du décompte des places, une seconde fois. Il se
- * fermerait de la même façon — une fonction `security definer` qui réimpose la
- * frontière d'école. Tant qu'elle n'existe pas, on n'affiche pas de position :
- * un nombre silencieusement toujours faux est pire que pas de nombre.
+ * D'où `waitlist_rank_for_family`, qui échappe à la RLS pour voir la file
+ * entière. Et qui ne reçoit **que le cours** : la cible — quelle inscription
+ * classer — est dérivée du foyer courant. Lui passer un `enrollment_id`
+ * laisserait un parent apprendre le rang de l'enfant d'un autre foyer.
+ *
+ * La cible sensible vient de l'identité ; seul le contexte vient de la requête.
  */
 export async function getPortalEnrollments(
   organizationId: string,
@@ -169,6 +174,7 @@ export async function getPortalEnrollments(
         dayOfWeek: klass.dayOfWeek,
         startTime: klass.startTime,
         status: enrollment.status,
+        klassId: enrollment.klassId,
       })
       .from(enrollment)
       .innerJoin(student, eq(student.id, enrollment.studentId))
@@ -180,7 +186,23 @@ export async function getPortalEnrollments(
           inArray(enrollment.status, [...LIVE_ENROLLMENT_STATUSES]),
         ),
       )
-      .orderBy(asc(student.firstName), asc(klass.dayOfWeek)),
+      .orderBy(asc(student.firstName), asc(klass.dayOfWeek))
+      .then((rows) =>
+        Promise.all(
+          rows.map(async (row) => {
+            if (row.status !== "waitlisted") {
+              return { ...row, waitlistRank: null };
+            }
+
+            const ranked = await tx.execute(
+              sql`select waitlist_rank_for_family(${row.klassId}::uuid) as rank`,
+            );
+
+            const rank = (ranked.rows[0] as { rank: number | null }).rank;
+            return { ...row, waitlistRank: rank === null ? null : Number(rank) };
+          }),
+        ),
+      ),
   );
 }
 

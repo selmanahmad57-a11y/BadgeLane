@@ -367,6 +367,7 @@
     "enrolNote": "Las plazas mostradas son orientativas. Si la clase se llena antes de que pulses, tu hijo pasa a la lista de espera en lugar de recibir un error: nunca se mete a nadie a la fuerza en una piscina llena.",
     "status_active": "Inscrito",
     "status_waitlisted": "Lista de espera",
-    "status_paused": "En pausa"
+    "status_paused": "En pausa",
+    "waitlistPosition": "Lista de espera · n.º {rank}"
   }
 }

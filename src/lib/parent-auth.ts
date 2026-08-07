@@ -1,14 +1,12 @@
 import "server-only";
 
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { and, eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
 import type { Locale } from "@/config/i18n";
 import { localizedPath, routes } from "@/config/routes";
 import { db } from "@/db/client";
-import { family, guardian } from "@/db/schema";
-
 import { verifiedEmailsOf } from "./verified-email";
 
 /**
@@ -61,15 +59,18 @@ export type ParentPrincipal = {
   preferredLanguage: string;
 };
 
-/** Une famille rattachée à l'adresse du visiteur. */
+/**
+ * Une famille rattachée à l'adresse du visiteur.
+ *
+ * Trois identifiants, et rien d'autre. Le nom du foyer, celui du tuteur et sa
+ * langue se lisent normalement une fois le contexte posé par `withFamily()` :
+ * les faire sortir de l'amorçage reviendrait à élargir une exception au lieu de
+ * la contenir.
+ */
 export type ParentMembership = {
   organizationId: string;
-  organizationName: string;
   familyId: string;
-  familyLabel: string;
   guardianId: string;
-  guardianName: string;
-  preferredLanguage: string;
 };
 
 /**
@@ -89,35 +90,36 @@ export async function findMembershipsForEmails(
 ): Promise<ParentMembership[]> {
   if (emails.length === 0) return [];
 
-  const rows = await db
-    .select({
-      organizationId: guardian.organizationId,
-      familyId: guardian.familyId,
-      guardianId: guardian.id,
-      guardianName: guardian.name,
-      preferredLanguage: guardian.preferredLanguage,
-      familyLabel: family.primaryGuardianName,
-    })
-    .from(guardian)
-    .innerJoin(family, eq(family.id, guardian.familyId))
-    .where(
-      and(
-        sql`lower(${guardian.email}) = any(${emails})`,
-        /**
-         * Le `where` sur l'école n'existe pas ici : c'est le seul endroit du
-         * produit où l'on cherche à travers les écoles. La ligne trouvée dit
-         * ensuite de laquelle il s'agit.
-         */
-        sql`${guardian.email} is not null`,
-      ),
-    );
-
   /**
-   * Le nom de l'école n'est pas lu ici : la table `organization` porte aussi
-   * `stripe_account_id` et `settings`. Il est résolu séparément, colonne par
-   * colonne, dans les requêtes du portail.
+   * Passage obligé par la fonction `resolve_guardian_families`, et non par une
+   * requête ordinaire sur `guardian`.
+   *
+   * Une requête ordinaire renverrait **zéro ligne** : depuis la Semaine 10,
+   * `guardian` est soumise à la RLS, qui exige un contexte d'école — celui-là
+   * même qu'on cherche ici à établir. C'est l'amorçage circulaire de la
+   * Semaine 1, et il se résout comme au webhook Stripe : par un point d'entrée
+   * unique, minimal, et dont l'exception est écrite noir sur blanc.
+   *
+   * La fonction n'accepte que des adresses déjà connues et ne rend que des
+   * identifiants : elle ne peut donc pas servir à énumérer les familles d'une
+   * école, ni à récupérer une adresse qu'on n'avait pas.
    */
-  return rows.map((row) => ({ ...row, organizationName: "" }));
+  const { rows } = await db.execute(
+    sql`select organization_id, family_id, guardian_id
+        from resolve_guardian_families(${sql.param(emails as string[])}::text[])`,
+  );
+
+  return (
+    rows as unknown as {
+      organization_id: string;
+      family_id: string;
+      guardian_id: string;
+    }[]
+  ).map((row) => ({
+    organizationId: row.organization_id,
+    familyId: row.family_id,
+    guardianId: row.guardian_id,
+  }));
 }
 
 /**

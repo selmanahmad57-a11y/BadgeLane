@@ -253,6 +253,65 @@ async function main(): Promise<number> {
       );
     }
 
+    // ── L'amorçage : résoudre une famille SANS contexte ───────────────────
+    //
+    // La seconde exception à la RLS du produit. Elle doit résoudre hors
+    // contexte — sinon le portail ne s'ouvre jamais — sans devenir pour autant
+    // un annuaire des familles.
+
+    console.log("\nAmorçage : résolution hors contexte de tenant");
+
+    /** Aucun contexte, ni école ni famille : la situation du portail à froid. */
+    await client.query("select set_config($1, $2, true)", [
+      TENANT_CONTEXT_SETTING,
+      "",
+    ]);
+    await client.query("select set_config($1, $2, true)", [
+      FAMILY_CONTEXT_SETTING,
+      "",
+    ]);
+
+    const blind = await client.query(
+      "select count(*)::int n from guardian where lower(email) = $1",
+      ["sonde-mien@example.test"],
+    );
+    check(
+      "une lecture ordinaire de guardian ne voit rien hors contexte",
+      Number(blind.rows[0].n) === 0,
+      `${blind.rows[0].n} — la RLS ne filtre pas`,
+    );
+
+    const resolved = await client.query(
+      "select organization_id, family_id from resolve_guardian_families($1)",
+      [["sonde-mien@example.test"]],
+    );
+    check(
+      "la fonction d'amorçage, elle, résout la famille",
+      resolved.rows.length === 1 && resolved.rows[0].family_id === mine,
+      `${resolved.rows.length} ligne(s)`,
+    );
+
+    /** Contrôle négatif : sans connaître l'adresse, on n'obtient rien. */
+    const unknown = await client.query(
+      "select count(*)::int n from resolve_guardian_families($1)",
+      [["personne@example.test"]],
+    );
+    check(
+      "une adresse inconnue ne rend rien — aucune énumération possible",
+      Number(unknown.rows[0].n) === 0,
+      `${unknown.rows[0].n}`,
+    );
+
+    const empty = await client.query(
+      "select count(*)::int n from resolve_guardian_families($1)",
+      [[]],
+    );
+    check(
+      "une liste d'adresses vide ne rend rien",
+      Number(empty.rows[0].n) === 0,
+      `${empty.rows[0].n}`,
+    );
+
     // ── 6. Le contrôle du contrôle ────────────────────────────────────────
     //
     // Avant de prouver un refus, prouver qu'il y a quelque chose à refuser.

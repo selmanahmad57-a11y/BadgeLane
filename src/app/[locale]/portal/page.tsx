@@ -2,7 +2,11 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { portalStudentPath } from "@/config/routes";
-import { getPortalChildren, getPortalSchool } from "@/db/portal-queries";
+import {
+  getPortalChildren,
+  getPortalFamilyLabel,
+  getPortalSchool,
+} from "@/db/portal-queries";
 import { Link } from "@/i18n/navigation";
 import { requireParentMemberships } from "@/lib/parent-auth";
 
@@ -63,9 +67,23 @@ export default async function PortalPage({
   const active =
     memberships.find((entry) => entry.familyId === requested) ?? memberships[0];
 
-  const [school, children] = await Promise.all([
+  const [school, children, labels] = await Promise.all([
     getPortalSchool(active.organizationId, active.familyId),
     getPortalChildren(active.organizationId, active.familyId),
+    /**
+     * Les libellés des foyers sont lus **sous contexte**, un par un — donc à
+     * travers la RLS, qui confirme au passage que chacun est bien accessible.
+     * L'amorçage ne fait sortir que des identifiants ; tout ce qui s'affiche
+     * repasse par la barrière.
+     */
+    Promise.all(
+      memberships.map(async (entry) => ({
+        familyId: entry.familyId,
+        label:
+          (await getPortalFamilyLabel(entry.organizationId, entry.familyId)) ??
+          entry.familyId,
+      })),
+    ),
   ]);
 
   return (
@@ -73,12 +91,9 @@ export default async function PortalPage({
       title={t("heading")}
       description={school ? t("atSchool", { school: school.name }) : undefined}
     >
-      {memberships.length > 1 ? (
+      {labels.length > 1 ? (
         <FamilyPicker
-          memberships={memberships.map((entry) => ({
-            familyId: entry.familyId,
-            label: entry.familyLabel,
-          }))}
+          memberships={labels}
           activeFamilyId={active.familyId}
           label={t("chooseFamily")}
         />

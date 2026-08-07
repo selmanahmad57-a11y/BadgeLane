@@ -4,6 +4,8 @@ import {
   ACCESS_CATEGORIES,
   accessCategoryOf,
   FAMILY_CONTEXT_SETTING,
+  GUARDIAN_LOOKUP_COLUMNS,
+  GUARDIAN_LOOKUP_FUNCTION,
 } from "@/config/access";
 import { TENANT_CONTEXT_SETTING } from "@/config/database";
 
@@ -149,6 +151,20 @@ export async function checkTenantIsolation(
     order by ordinal_position
   `);
 
+  /**
+   * La fonction d'amorçage du portail parent : seconde et dernière exception à
+   * la RLS. Auditée comme la vue Stripe — une exception qu'on ne contrôle pas
+   * s'élargit toujours.
+   */
+  const lookupFunctionRows = await executor.execute(sql`
+    select p.prosecdef as security_definer,
+           pg_get_function_result(p.oid) as result_signature
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = current_schema()
+      and p.proname = ${GUARDIAN_LOOKUP_FUNCTION}
+  `);
+
   const tables = tableRows.rows as unknown as TableSecurityRow[];
   const policies = policyRows.rows as unknown as PolicyRow[];
   const tenantColumns = new Set(
@@ -174,6 +190,44 @@ export async function checkTenantIsolation(
     if (unexpected.length > 0) {
       problems.push(
         `${STRIPE_LOOKUP_VIEW} : expose « ${unexpected.join(", ") } » en plus des identifiants attendus. Cette vue échappe à la RLS : elle ne doit jamais porter de donnée d'école.`,
+      );
+    }
+  }
+
+  /**
+   * L'amorçage du portail parent. Deux propriétés, indissociables :
+   * s'exécuter hors RLS — sinon il ne résout rien — et ne rendre que des
+   * identifiants — sinon il devient un annuaire des familles.
+   */
+  const lookup = lookupFunctionRows.rows[0] as
+    | { security_definer: boolean; result_signature: string }
+    | undefined;
+
+  if (!lookup) {
+    problems.push(
+      `${GUARDIAN_LOOKUP_FUNCTION} : fonction absente. Le portail parent ne peut pas résoudre une famille sans elle — la migration a-t-elle été appliquée ?`,
+    );
+  } else {
+    if (!lookup.security_definer) {
+      problems.push(
+        `${GUARDIAN_LOOKUP_FUNCTION} : n'est pas « security definer ». Elle s'exécuterait sous la RLS, qui exige justement le contexte qu'elle sert à établir : elle ne renverrait jamais rien.`,
+      );
+    }
+
+    /** `pg_get_function_result` rend « TABLE(col type, …) » : on en tire les noms. */
+    const returned = [
+      ...lookup.result_signature.matchAll(/(\w+)\s+[\w[\]]+/g),
+    ]
+      .map((match) => match[1])
+      .filter((name) => name.toLowerCase() !== "table");
+
+    const unexpected = returned.filter(
+      (column) => !GUARDIAN_LOOKUP_COLUMNS.includes(column),
+    );
+
+    if (unexpected.length > 0) {
+      problems.push(
+        `${GUARDIAN_LOOKUP_FUNCTION} : rend « ${unexpected.join(", ")} » en plus des identifiants attendus. Cette fonction échappe à la RLS : elle ne doit jamais rendre de donnée personnelle, ni rien qui se lise très bien une fois le contexte posé.`,
       );
     }
   }

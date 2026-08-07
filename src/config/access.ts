@@ -37,6 +37,29 @@
 export const FAMILY_CONTEXT_SETTING = "app.current_family_id";
 
 /**
+ * Fonction d'amorçage du portail parent : la seule lecture qui échappe à la RLS.
+ *
+ * Le portail doit découvrir de quelle école et de quelle famille il s'agit à
+ * partir d'une adresse vérifiée — donc lire `guardian` avant d'avoir le
+ * contexte que la RLS exige. Même amorçage circulaire qu'au webhook Stripe.
+ *
+ * Une **fonction** plutôt qu'une vue, et la différence est de nature : une vue
+ * exposerait la liste de toutes les adresses e-mail de toutes les familles, en
+ * lecture libre. Ici il faut déjà connaître l'adresse pour obtenir quoi que ce
+ * soit, et ce qui sort ne contient aucune donnée personnelle.
+ *
+ * `db:verify` vérifie qu'elle ne rend que ces trois identifiants. Sans ce
+ * contrôle, il suffirait d'y ajouter un jour le nom du tuteur « pour éviter une
+ * requête » et l'exception s'élargirait sans que personne ne le remarque.
+ */
+export const GUARDIAN_LOOKUP_FUNCTION = "resolve_guardian_families";
+export const GUARDIAN_LOOKUP_COLUMNS = [
+  "organization_id",
+  "family_id",
+  "guardian_id",
+];
+
+/**
  * Tables portant directement la famille, et la colonne qui la porte.
  *
  * `family` se rattache par sa propre clé primaire : elle *est* la famille.

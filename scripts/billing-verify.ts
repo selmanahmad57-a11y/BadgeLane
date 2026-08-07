@@ -5,10 +5,16 @@ import { config as loadEnvFile } from "dotenv";
 import ws from "ws";
 
 import {
+  AT_RISK_SUBSCRIPTION_STATUSES,
+  CUSTOMER_PORTAL_FEATURES,
+  CUSTOMER_PORTAL_LOCALE,
   isRecurringInterval,
+  KNOWN_INVOICE_STATUSES,
+  KNOWN_SUBSCRIPTION_STATUSES,
   STRIPE_RECURRING_INTERVAL,
   TERM_INVOICE_DAYS_UNTIL_DUE,
   TUITION_INTERVALS,
+  UNPAID_INVOICE_STATUSES,
 } from "../src/config/billing";
 import {
   TENANT_CONTEXT_SETTING,
@@ -117,6 +123,87 @@ async function main(): Promise<number> {
       Number.isInteger(TERM_INVOICE_DAYS_UNTIL_DUE) &&
         TERM_INVOICE_DAYS_UNTIL_DUE > 0,
       String(TERM_INVOICE_DAYS_UNTIL_DUE),
+    );
+
+    console.log("\nCe que le portail client laisse faire au parent");
+
+    /**
+     * Ces réglages ne sont posés que sur un compte qui n'en a aucun — mais ce
+     * jour-là, ils décident de ce qu'un parent peut faire seul. En activer un de
+     * plus par distraction, et une famille pourrait résilier l'inscription de
+     * son enfant depuis une page de paiement, sans que l'école en soit avertie
+     * autrement que par un webhook.
+     */
+    const portalFeatures = CUSTOMER_PORTAL_FEATURES as Record<
+      string,
+      { enabled: boolean }
+    >;
+
+    check(
+      "remplacer un moyen de paiement est autorisé",
+      portalFeatures.payment_method_update?.enabled === true,
+    );
+    check(
+      "consulter ses factures est autorisé",
+      portalFeatures.invoice_history?.enabled === true,
+    );
+    check(
+      "résilier un abonnement n'est PAS autorisé",
+      portalFeatures.subscription_cancel === undefined,
+      JSON.stringify(portalFeatures.subscription_cancel),
+    );
+    check(
+      "modifier un abonnement n'est PAS autorisé",
+      portalFeatures.subscription_update === undefined,
+      JSON.stringify(portalFeatures.subscription_update),
+    );
+    check(
+      "la langue du portail est laissée à Stripe",
+      CUSTOMER_PORTAL_LOCALE === "auto",
+      CUSTOMER_PORTAL_LOCALE,
+    );
+
+    console.log("\nCe que l'école doit voir comme impayé");
+
+    /**
+     * Le dunning du MVP est celui de Stripe : il relance seul, au nom de
+     * l'école. Notre part est de montrer ce qui reste dû — et de ne pas
+     * l'inventer. Un brouillon n'a rien réclamé, une facture annulée non plus.
+     */
+    for (const [status, expected] of [
+      ["open", true],
+      ["uncollectible", true],
+      ["draft", false],
+      ["void", false],
+      ["paid", false],
+    ] as const) {
+      check(
+        `« ${status} » ${expected ? "compte" : "ne compte pas"} comme impayé`,
+        UNPAID_INVOICE_STATUSES.includes(status) === expected,
+      );
+    }
+
+    check(
+      "un abonnement en échec de paiement est signalé",
+      AT_RISK_SUBSCRIPTION_STATUSES.includes("past_due"),
+    );
+    check(
+      "un abonnement actif ne l'est pas",
+      !AT_RISK_SUBSCRIPTION_STATUSES.includes("active"),
+    );
+
+    /** Les deux listes ne parlent que le vocabulaire de Stripe. */
+    check(
+      "les statuts d'impayé sont tous connus de Stripe",
+      UNPAID_INVOICE_STATUSES.every((status) =>
+        (KNOWN_INVOICE_STATUSES as readonly string[]).includes(status),
+      ),
+    );
+    check(
+      "les statuts d'abonnement à risque sont tous connus de Stripe",
+      AT_RISK_SUBSCRIPTION_STATUSES.every((status) =>
+        (KNOWN_SUBSCRIPTION_STATUSES as readonly string[]).includes(status),
+      ),
     );
 
     console.log("\nReconnaissance du doublon d'événement");

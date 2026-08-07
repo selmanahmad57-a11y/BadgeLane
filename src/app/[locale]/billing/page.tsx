@@ -10,9 +10,11 @@ import { getStripe } from "@/lib/stripe";
 import { SELECT_CLASS } from "@/components/locale-select";
 import { Input } from "@/components/ui/input";
 import {
+  AT_RISK_SUBSCRIPTION_STATUSES,
   isRecurringInterval,
   TERM_INVOICE_DAYS_UNTIL_DUE,
   TUITION_INTERVALS,
+  UNPAID_INVOICE_STATUSES,
 } from "@/config/billing";
 import { FIELD_LIMITS } from "@/config/validation";
 import { getBillingOverview } from "@/db/queries";
@@ -21,6 +23,7 @@ import {
   createCheckoutLink,
   createTuitionPlan,
   issueTermInvoice,
+  openCustomerPortal,
   startStripeOnboarding,
 } from "./actions";
 
@@ -90,6 +93,30 @@ export default async function BillingPage({ params }: BillingPageProps) {
     overview?.plans.filter((plan) => isRecurringInterval(plan.interval)) ?? [];
   const oneOffPlans =
     overview?.plans.filter((plan) => !isRecurringInterval(plan.interval)) ?? [];
+
+  /** Seules les familles ayant un dossier chez Stripe ont un portail. */
+  const billedFamilies = overview?.families.filter((entry) => entry.billed) ?? [];
+
+  /**
+   * Ce qui reste à récupérer.
+   *
+   * Stripe relance tout seul — nouvelles tentatives sur les abonnements,
+   * rappels sur les factures, au nom de l'école. Le rôle de cet écran n'est
+   * donc pas de relancer, mais de **montrer** : sans cette liste, l'école
+   * apprendrait ses impayés en consultant le tableau de bord Stripe.
+   */
+  const unpaidInvoices =
+    overview?.invoices.filter((entry) =>
+      UNPAID_INVOICE_STATUSES.includes(entry.status),
+    ) ?? [];
+  const atRiskSubscriptions =
+    overview?.subscriptions.filter((entry) =>
+      AT_RISK_SUBSCRIPTION_STATUSES.includes(entry.status),
+    ) ?? [];
+  const unpaidTotal = unpaidInvoices.reduce(
+    (total, entry) => total + entry.amount,
+    0,
+  );
 
   return (
     <ConsoleShell title={t("heading")} description={t("intro")}>
@@ -204,6 +231,112 @@ export default async function BillingPage({ params }: BillingPageProps) {
               ) : null}
             </CardContent>
           </Card>
+
+          {/*
+            À récupérer, en tête d'écran.
+
+            Stripe fait les relances — c'est lui qui écrit aux familles, au nom
+            de l'école. Ce bloc ne relance rien : il évite à l'école d'aller
+            chercher ses impayés dans le tableau de bord Stripe.
+          */}
+          {unpaidInvoices.length > 0 || atRiskSubscriptions.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("outstandingHeading")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {unpaidInvoices.length > 0 ? (
+                  <>
+                    <p className="text-sm">
+                      {t("outstandingSummary", {
+                        count: unpaidInvoices.length,
+                        total: money.format(unpaidTotal / 100),
+                      })}
+                    </p>
+                    <ul className="flex flex-col gap-2 text-sm">
+                      {unpaidInvoices.map((entry) => (
+                        <li
+                          key={entry.id}
+                          className="flex flex-wrap items-center justify-between gap-2"
+                        >
+                          <span>
+                            {entry.familyName}
+                            {entry.dueDate ? (
+                              <span className="text-muted-foreground ms-2">
+                                {t("dueOn", {
+                                  date: entry.dueDate.toISOString().slice(0, 10),
+                                })}
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="flex items-center gap-3">
+                            <span>
+                              {new Intl.NumberFormat(locale, {
+                                style: "currency",
+                                currency: entry.currency.toUpperCase(),
+                              }).format(entry.amount / 100)}
+                            </span>
+                            {entry.hostedInvoiceUrl ? (
+                              <a
+                                href={entry.hostedInvoiceUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline underline-offset-4"
+                              >
+                                {t("paymentLink")}
+                              </a>
+                            ) : null}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+
+                {atRiskSubscriptions.length > 0 ? (
+                  <ul className="flex flex-col gap-2 text-sm">
+                    {atRiskSubscriptions.map((entry) => (
+                      <li
+                        key={entry.id}
+                        className="flex flex-wrap items-center justify-between gap-2"
+                      >
+                        <span>{entry.familyName}</span>
+                        <span className="text-muted-foreground">
+                          {entry.status}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                <p className="text-muted-foreground text-sm text-pretty">
+                  {t("dunningNote")}
+                </p>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {canManage && billedFamilies.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("portalHeading")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <ActionForm action={openCustomerPortal} submitLabel={t("openPortal")} size="sm">
+                  <select name="familyId" aria-label={t("family")} className={SELECT_CLASS}>
+                    {billedFamilies.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.label}
+                      </option>
+                    ))}
+                  </select>
+                </ActionForm>
+                <p className="text-muted-foreground text-sm text-pretty">
+                  {t("portalNote")}
+                </p>
+              </CardContent>
+            </Card>
+          ) : null}
 
           {/*
             Deux formulaires plutôt qu'un seul avec une liste mêlée : abonner une

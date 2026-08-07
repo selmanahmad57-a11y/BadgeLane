@@ -71,6 +71,12 @@ export const ACTION_REASONS = [
   "planIsRecurring",
   /** La famille n'a pas d'adresse e-mail : Stripe ne peut pas lui écrire. */
   "familyHasNoEmail",
+  /**
+   * Aucun paiement n'a encore été demandé à cette famille : elle n'a donc pas
+   * de dossier chez Stripe, et son portail serait vide. Refuser vaut mieux que
+   * lui ouvrir une page sans rien dedans.
+   */
+  "familyNotBilledYet",
 ] as const;
 
 export type ActionReason = (typeof ACTION_REASONS)[number];

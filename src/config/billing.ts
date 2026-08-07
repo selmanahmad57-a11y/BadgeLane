@@ -99,6 +99,68 @@ export const KNOWN_INVOICE_STATUSES = [
 ] as const;
 
 /**
+ * Ce que l'école doit voir comme « à récupérer ».
+ *
+ * `open` — finalisée, échue ou non, mais pas payée. `uncollectible` — Stripe a
+ * renoncé après ses relances. `draft` en est absent (rien n'a été demandé),
+ * `void` aussi (la demande a été annulée), et `paid` évidemment.
+ *
+ * Ces statuts viennent de Stripe : nous les lisons, nous n'en décidons aucun.
+ */
+export const UNPAID_INVOICE_STATUSES: readonly string[] = [
+  "open",
+  "uncollectible",
+];
+
+/**
+ * Abonnements dont le paiement ne passe plus.
+ *
+ * `past_due` est celui que produit un prélèvement échoué : Stripe est en train
+ * de retenter (Smart Retries) et d'écrire à la famille. `unpaid` vient après,
+ * quand il a cessé. `incomplete` signale un premier paiement jamais abouti.
+ */
+export const AT_RISK_SUBSCRIPTION_STATUSES: readonly string[] = [
+  "past_due",
+  "unpaid",
+  "incomplete",
+];
+
+/**
+ * Ce que le portail Stripe autorise au parent.
+ *
+ * ── Pourquoi ces deux-là et pas les autres ───────────────────────────────────
+ *
+ * `payment_method_update` est la raison d'être du portail : quand un
+ * prélèvement échoue, c'est presque toujours une carte expirée. Le parent la
+ * remplace lui-même, sans que l'école ait à manipuler un numéro de carte —
+ * BadgeLane non plus, d'ailleurs.
+ *
+ * `invoice_history` lui donne ses factures et le moyen de payer celles qui
+ * restent ouvertes.
+ *
+ * Tout ce qui n'est pas listé reste **désactivé** — c'est le défaut de Stripe.
+ * En particulier `subscription_cancel` : résilier l'inscription d'un enfant est
+ * une décision qui se prend avec l'école, pas un bouton dans un portail de
+ * paiement. Le self-service côté parent arrive en Semaine 10, avec les règles
+ * qui vont avec.
+ */
+export const CUSTOMER_PORTAL_FEATURES = {
+  payment_method_update: { enabled: true },
+  invoice_history: { enabled: true },
+} as const;
+
+/**
+ * Langue du portail : laissée à Stripe.
+ *
+ * Nous connaissons pourtant la langue de la famille. Mais la lui imposer
+ * supposerait de tenir une copie de la liste des langues que Stripe sait
+ * afficher — une liste qui vieillirait en silence, et qui ferait échouer
+ * l'ouverture du portail le jour où l'école ajoute une langue que Stripe ne
+ * connaît pas. `auto` ne peut pas se tromper d'une façon qu'on ne voit pas.
+ */
+export const CUSTOMER_PORTAL_LOCALE = "auto";
+
+/**
  * Aucune commission de plateforme sur les frais de scolarité : l'école encaisse
  * l'intégralité, BadgeLane se rémunère par son abonnement SaaS.
  *

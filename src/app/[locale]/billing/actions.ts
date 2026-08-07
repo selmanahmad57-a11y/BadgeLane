@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import {
+  CUSTOMER_PORTAL_LOCALE,
   isRecurringInterval,
   STRIPE_RECURRING_INTERVAL,
   TERM_INVOICE_DAYS_UNTIL_DUE,
@@ -29,6 +30,7 @@ import {
   forConnectedAccount,
   getStripe,
 } from "@/lib/stripe";
+import { resolvePortalConfiguration } from "@/lib/stripe-portal";
 
 /**
  * Connexion du compte Stripe de l'école, en Connect **Standard**.
@@ -404,6 +406,89 @@ export async function createCheckoutLink(
    * exception, qui serait interceptée par la gestion d'erreurs de l'action et
    * transformée en échec silencieux.
    */
+  if (destination) redirect(destination);
+
+  return result;
+}
+
+/**
+ * Ouvre le portail client de Stripe pour une famille.
+ *
+ * ── Le dunning est celui de Stripe ───────────────────────────────────────────
+ *
+ * Stripe relance déjà seul : nouvelles tentatives sur les abonnements, rappels
+ * avant et après échéance sur les factures. Ces messages partent au nom de
+ * l'**école**, puisque c'est elle le marchand — ce n'est pas un contournement,
+ * c'est la conséquence directe de Connect Standard. Ils portent déjà le lien de
+ * paiement hébergé que nous reflétons.
+ *
+ * BadgeLane n'a donc ni tâche planifiée ni fournisseur d'envoi à construire.
+ * Son rôle est de **refléter** l'état par les webhooks et de montrer les
+ * impayés à l'école. Ce portail complète le tableau : le parent y remplace la
+ * carte qui a échoué.
+ *
+ * ── Pourquoi ne pas créer le client au passage ───────────────────────────────
+ *
+ * Une famille à qui rien n'a jamais été demandé n'a pas de dossier chez Stripe.
+ * Lui en fabriquer un ouvrirait un portail vide — un écran qui ne dit pas ce
+ * qui ne va pas. On refuse, avec le geste à faire à la place.
+ */
+export async function openCustomerPortal(
+  formData: FormData,
+): Promise<ActionResult> {
+  /** Variable locale : une adresse de portail ne doit jamais être partagée. */
+  let destination: string | null = null;
+
+  const result = await runAuthorizedAction("billing:manage", async (context) => {
+    const stripe = getStripe();
+    if (!stripe) {
+      throw new ValidationError("Stripe non configuré.", "stripeNotConfigured");
+    }
+
+    const familyId = requiredUuid(formData, "familyId");
+
+    await withTenant(context.organizationId, async (tx) => {
+      const account = await requireConnectedAccount(tx, context.organizationId);
+      const scoped = forConnectedAccount(account.stripeAccountId);
+
+      const [household] = await tx
+        .select({ customerId: family.stripeCustomerId })
+        .from(family)
+        .where(
+          and(
+            eq(family.id, familyId),
+            eq(family.organizationId, context.organizationId),
+          ),
+        )
+        .limit(1);
+
+      if (!household) {
+        throw new ValidationError("Famille introuvable.", "notInThisSchool");
+      }
+
+      if (!household.customerId) {
+        throw new ValidationError(
+          "Cette famille n'a encore aucun paiement.",
+          "familyNotBilledYet",
+        );
+      }
+
+      const configuration = await resolvePortalConfiguration(stripe, scoped);
+
+      const session = await stripe.billingPortal.sessions.create(
+        {
+          customer: household.customerId,
+          return_url: `${clientEnv.NEXT_PUBLIC_APP_URL}/${clientEnv.NEXT_PUBLIC_DEFAULT_LOCALE}${routes.billing}`,
+          locale: CUSTOMER_PORTAL_LOCALE,
+          ...(configuration ? { configuration } : {}),
+        },
+        scoped,
+      );
+
+      destination = session.url;
+    });
+  });
+
   if (destination) redirect(destination);
 
   return result;

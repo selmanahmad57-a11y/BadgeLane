@@ -8,8 +8,10 @@ import {
   eq,
   ilike,
   inArray,
+  isNotNull,
   notInArray,
   or,
+  sql,
 } from "drizzle-orm";
 
 import type { AttendanceStatus } from "@/config/attendance";
@@ -954,7 +956,11 @@ export type BillingOverview = {
     /** Page de paiement Stripe : c'est le lien qu'on transmet à la famille. */
     hostedInvoiceUrl: string | null;
   }[];
-  families: { id: string; label: string }[];
+  /**
+   * `billed` distingue les familles qui ont un dossier de paiement chez Stripe.
+   * Seules celles-là ont un portail à ouvrir.
+   */
+  families: { id: string; label: string; billed: boolean }[];
 };
 
 /** Tout ce qu'affiche l'écran Facturation : tarifs, abonnements, factures. */
@@ -998,7 +1004,16 @@ export async function getBillingOverview(
         .orderBy(desc(invoice.createdAt))
         .limit(25),
       tx
-        .select({ id: family.id, label: family.primaryGuardianName })
+        .select({
+          id: family.id,
+          label: family.primaryGuardianName,
+          /**
+           * Un booléen plutôt que l'identifiant Stripe : l'écran a seulement
+           * besoin de savoir s'il y a un portail à ouvrir, pas de connaître le
+           * dossier de paiement de la famille.
+           */
+          billed: sql<boolean>`${isNotNull(family.stripeCustomerId)}`,
+        })
         .from(family)
         .where(eq(family.organizationId, organizationId))
         .orderBy(asc(family.primaryGuardianName)),

@@ -265,7 +265,8 @@
     "stripeNotConnected": "Conecta primero la cuenta de Stripe de tu escuela.",
     "planIsOneOff": "Esta tarifa se cobra por trimestre, así que no se puede suscribir. Emite una factura en su lugar.",
     "planIsRecurring": "Esta tarifa es una suscripción, así que no se puede emitir como factura única. Suscribe a la familia en su lugar.",
-    "familyHasNoEmail": "Stripe no tiene ninguna dirección de correo de esta familia, así que no puede enviarle la factura. Añade una en la ficha de la familia."
+    "familyHasNoEmail": "Stripe no tiene ninguna dirección de correo de esta familia, así que no puede enviarle la factura. Añade una en la ficha de la familia.",
+    "familyNotBilledYet": "Todavía no se le ha cobrado nada a esta familia, así que no tiene ningún registro de pago que gestionar. Suscríbela o emítele una factura primero."
   },
   "today": {
     "heading": "Hoy en la piscina",
@@ -337,6 +338,12 @@
     "issueInvoice": "Emitir factura",
     "issueInvoiceNote": "Crea una factura única de Stripe con vencimiento en {days} días y su propia página de pago. A diferencia de una suscripción, nunca se renueva, así que no hay ninguna fecha de fin que recordar.",
     "paymentLink": "Enlace de pago",
-    "dueOn": "vence el {date}"
+    "dueOn": "vence el {date}",
+    "outstandingHeading": "Pendiente de cobro",
+    "outstandingSummary": "{count, plural, one {# factura sin pagar} other {# facturas sin pagar}} — {total} por cobrar.",
+    "dunningNote": "Stripe se encarga de reclamarlas por ti: reintenta los pagos con tarjeta fallidos y envía recordatorios a las familias antes y después del vencimiento, desde la cuenta Stripe de tu escuela. Esta lista está aquí para que no tengas que abrir Stripe para saber cómo va.",
+    "portalHeading": "Portal del cliente",
+    "openPortal": "Abrir el portal",
+    "portalNote": "Abre el portal alojado por Stripe para esa familia, donde el padre o la madre sustituye una tarjeta caducada y consulta sus facturas. Stripe gestiona los datos de la tarjeta: ni tu escuela ni BadgeLane los ven nunca. El enlace es de un solo uso y caduca pronto, así que ábrelo junto a la familia en lugar de enviarlo por adelantado."
   }
 }

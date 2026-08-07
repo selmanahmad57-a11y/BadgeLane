@@ -265,7 +265,8 @@
     "stripeNotConnected": "Connect your school's Stripe account first.",
     "planIsOneOff": "This rate is billed per term, so it cannot be subscribed to. Issue an invoice for it instead.",
     "planIsRecurring": "This rate is a subscription, so it cannot be issued as a one-off invoice. Subscribe the family instead.",
-    "familyHasNoEmail": "Stripe has no email address for this family, so it cannot send them the invoice. Add one on the family record."
+    "familyHasNoEmail": "Stripe has no email address for this family, so it cannot send them the invoice. Add one on the family record.",
+    "familyNotBilledYet": "Nothing has been charged to this family yet, so they have no payment record to manage. Subscribe them or issue an invoice first."
   },
   "today": {
     "heading": "Today at the pool",
@@ -337,6 +338,12 @@
     "issueInvoice": "Issue invoice",
     "issueInvoiceNote": "Creates a one-off Stripe invoice due in {days} days, with its own payment page. Unlike a subscription it never renews, so there is no end date to remember.",
     "paymentLink": "Payment link",
-    "dueOn": "due {date}"
+    "dueOn": "due {date}",
+    "outstandingHeading": "Outstanding",
+    "outstandingSummary": "{count, plural, one {# unpaid invoice} other {# unpaid invoices}} — {total} to collect.",
+    "dunningNote": "Stripe chases these on your behalf: it retries failed card payments and emails families reminders before and after the due date, from your school's Stripe account. This list is here so you do not have to open Stripe to see where things stand.",
+    "portalHeading": "Customer portal",
+    "openPortal": "Open portal",
+    "portalNote": "Opens Stripe's hosted portal for that family, where a parent replaces an expired card and sees their invoices. Card details are handled by Stripe — neither your school nor BadgeLane ever sees them. The link is single-use and short-lived, so open it with the parent rather than sending it ahead."
   }
 }

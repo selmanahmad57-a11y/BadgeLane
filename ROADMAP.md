@@ -69,8 +69,32 @@ d'avance). Beaucoup d'écoles de natation facturent ainsi plutôt qu'au mois. Ce
 n'est **pas** un abonnement récurrent : à construire via les *Invoices*
 ponctuelles de Stripe, pas les *Subscriptions* — d'où le report de
 `tuition_plan.interval = term` hors de la Semaine 8.
-🛠️ Séquence de **dunning** (J0/J+2/J+5) sur `payment_failed` · **liens text-to-pay** · gestion du moyen de paiement côté parent (Stripe Customer Portal) · jobs planifiés.
+🛠️ **Dunning : celui de Stripe, pas le nôtre** (décision, voir ci-dessous) ·
+gestion du moyen de paiement côté parent (**Stripe Customer Portal**) ·
+affichage des impayés dans la vue Facturation admin.
 ✅ *Done :* un paiement échoué déclenche seul la relance + le lien pour repayer.
+
+> **Décision — on ne construit ni cron ni fournisseur d'envoi pour le MVP.**
+>
+> Stripe relance déjà tout seul : *Smart Retries* et e-mails automatiques sur
+> les abonnements, rappels avant et après échéance sur les factures ponctuelles.
+> Tout cela se règle dans le tableau de bord Stripe, pas dans le code.
+>
+> Comme l'école est le marchand (Connect Standard), ces messages partent **en son
+> nom**. Ce n'est pas un contournement : c'est la conséquence directe du modèle
+> choisi en Semaine 8.
+>
+> Le « text-to-pay » existe déjà — c'est `hosted_invoice_url`, que nous
+> reflétons et que les rappels de Stripe incluent.
+>
+> Le périmètre de BadgeLane se réduit donc à deux choses, toutes deux faites :
+> refléter l'état par les webhooks (`past_due`, `open`, `uncollectible`…) et
+> montrer les impayés à l'école pour qu'elle n'ait pas à ouvrir Stripe.
+>
+> Reste optionnel, et **pas requis pour le MVP** : des relances aux couleurs de
+> BadgeLane par-dessus celles de Stripe. Si elles arrivent un jour, ce sera
+> derrière une interface d'envoi, et Resend ne se branchera qu'avec les
+> communications de la Semaine 10.
 
 ### Semaine 10 — Portail parent & communications
 🎯 Le parent devient autonome.

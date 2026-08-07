@@ -99,7 +99,14 @@
     "timezoneLabel": "Zona horaria",
     "currencyLabel": "Moneda",
     "emptyHeading": "Todavía no hay nada que mostrar",
-    "emptyBody": "Tu escuela está conectada y aislada. Las clases, las familias y la facturación llegan en las próximas etapas."
+    "emptyBody": "Tu escuela está conectada y aislada. Las clases, las familias y la facturación llegan en las próximas etapas.",
+    "reviewHeading": "{count, plural, one {# inscripción por revisar} other {# inscripciones por revisar}}",
+    "reviewBody": "Las familias inscriben a sus hijos por su cuenta. Aquí no hay nada revisado todavía: una línea sale de esta lista cuando actúas, nunca porque haya pasado el tiempo.",
+    "reviewLevels": "Hijo en {child} · clase en {klass}",
+    "reviewNoLevel": "sin nivel",
+    "reviewMismatch": "Nivel distinto",
+    "reviewAccept": "Revisada",
+    "reviewRemove": "Quitar"
   },
   "curriculum": {
     "heading": "Plan de estudios",

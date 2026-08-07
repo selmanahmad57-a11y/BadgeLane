@@ -671,6 +671,24 @@ export const enrollment = pgTable(
       { onDelete: "set null" },
     ),
 
+    /**
+     * Quand l'école a relu cette inscription. `null` = pas encore relue.
+     *
+     * ── Un état, et surtout pas une fenêtre de temps ────────────────────────
+     *
+     * La première version affichait « les inscriptions des N derniers jours ».
+     * Ça a un défaut silencieux : une inscription douteuse faite pendant une
+     * semaine chargée sort de la fenêtre avant que quiconque l'ait regardée —
+     * et c'est précisément en haute saison, quand il y en a le plus et que le
+     * risque est le plus grand, qu'elle défile hors de vue.
+     *
+     * Avec un état, rien ne disparaît sans que quelqu'un l'ait vu. La file se
+     * vide parce qu'on la traite, pas parce que le temps passe. Même règle que
+     * partout ailleurs dans ce produit : on ne perd pas une trace au fil de
+     * l'eau.
+     */
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+
     ...timestamps,
   },
   (table) => [

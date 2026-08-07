@@ -1,5 +1,7 @@
 import "server-only";
 
+import { alias } from "drizzle-orm/pg-core";
+
 import {
   and,
   asc,
@@ -9,6 +11,7 @@ import {
   ilike,
   inArray,
   isNotNull,
+  isNull,
   notInArray,
   or,
   sql,
@@ -1057,4 +1060,76 @@ export function nextSortOrder(
     0,
   );
   return highest + step;
+}
+
+export type EnrollmentToReview = {
+  id: string;
+  studentName: string;
+  studentLevelName: string | null;
+  studentLevelSort: number | null;
+  klassTitle: string;
+  klassLevelName: string | null;
+  klassLevelSort: number | null;
+  status: string;
+  guardianName: string | null;
+  createdAt: Date;
+};
+
+/**
+ * Les inscriptions faites par les familles et non encore relues.
+ *
+ * ── Le contrepoids du « active direct » ──────────────────────────────────────
+ *
+ * Un parent inscrit son enfant sans approbation préalable. Ce choix n'est
+ * tenable que si l'école peut **retirer en aval** — et elle ne le peut que si
+ * elle voit ce qui est arrivé. Cette file est donc la condition de ce choix,
+ * pas un confort d'écran.
+ *
+ * ── Une file, pas un flux ────────────────────────────────────────────────────
+ *
+ * Le filtre porte sur `reviewed_at is null`, jamais sur une date récente. Une
+ * fenêtre de temps laisserait une inscription douteuse sortir de vue avant
+ * qu'on l'ait regardée, et d'autant plus sûrement en haute saison — quand il y
+ * en a le plus. Ici, rien ne part sans avoir été traité.
+ *
+ * Les rangs des deux niveaux sont rapportés pour que l'écart saute aux yeux :
+ * un débutant inscrit dans un cours avancé se repère d'un coup d'œil, sans
+ * comparer des noms.
+ */
+export async function getEnrollmentsToReview(
+  organizationId: string,
+): Promise<EnrollmentToReview[]> {
+  const studentLevel = alias(level, "student_level");
+  const klassLevel = alias(level, "klass_level");
+
+  return withTenant(organizationId, async (tx) =>
+    tx
+      .select({
+        id: enrollment.id,
+        studentName: student.firstName,
+        studentLevelName: studentLevel.name,
+        studentLevelSort: studentLevel.sortOrder,
+        klassTitle: klass.title,
+        klassLevelName: klassLevel.name,
+        klassLevelSort: klassLevel.sortOrder,
+        status: enrollment.status,
+        guardianName: guardian.name,
+        createdAt: enrollment.createdAt,
+      })
+      .from(enrollment)
+      .innerJoin(student, eq(student.id, enrollment.studentId))
+      .innerJoin(klass, eq(klass.id, enrollment.klassId))
+      .leftJoin(studentLevel, eq(studentLevel.id, student.currentLevelId))
+      .leftJoin(klassLevel, eq(klassLevel.id, klass.levelId))
+      .leftJoin(guardian, eq(guardian.id, enrollment.enrolledByGuardianId))
+      .where(
+        and(
+          eq(enrollment.organizationId, organizationId),
+          isNotNull(enrollment.enrolledByGuardianId),
+          isNull(enrollment.reviewedAt),
+          inArray(enrollment.status, [...LIVE_ENROLLMENT_STATUSES]),
+        ),
+      )
+      .orderBy(desc(enrollment.createdAt)),
+  );
 }

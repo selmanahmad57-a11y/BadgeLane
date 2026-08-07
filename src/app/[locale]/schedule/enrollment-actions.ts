@@ -213,3 +213,39 @@ export async function endEnrollment(
     revalidateEnrolment();
   });
 }
+
+/**
+ * Marque une inscription comme relue par l'école.
+ *
+ * ── Pourquoi cette action existe ─────────────────────────────────────────────
+ *
+ * Elle ne change rien à l'inscription elle-même : elle vide une ligne de la
+ * file de revue. C'est ce qui distingue une **file** d'un flux qui vieillit —
+ * on en sort par un geste, jamais par le passage du temps.
+ *
+ * Le geste appartient au personnel, sous la même capacité que le retrait :
+ * décider qu'une inscription est acceptable et décider de l'annuler sont deux
+ * faces du même pouvoir, et il n'a jamais été accordé au parent.
+ */
+export async function markEnrollmentReviewed(
+  formData: FormData,
+): Promise<ActionResult> {
+  return runAuthorizedAction("schedule:write", async (context) => {
+    const enrollmentId = requiredUuid(formData, "enrollmentId");
+
+    await withTenant(context.organizationId, async (tx) => {
+      await tx
+        .update(enrollment)
+        .set({ reviewedAt: new Date() })
+        .where(
+          and(
+            eq(enrollment.id, enrollmentId),
+            eq(enrollment.organizationId, context.organizationId),
+          ),
+        );
+    });
+
+    revalidateEnrolment();
+    revalidatePath(`/[locale]${routes.dashboard}`, "page");
+  });
+}

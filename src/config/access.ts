@@ -59,13 +59,6 @@ export const PARENT_CAPABILITIES = ["enrollment:self"] as const;
 
 export type ParentCapability = (typeof PARENT_CAPABILITIES)[number];
 
-/**
- * Fenêtre pendant laquelle une inscription est « nouvelle » pour l'école.
- *
- * Ce n'est pas un réglage d'affichage : c'est la durée pendant laquelle le
- * droit de retrait de l'école reste facile à exercer.
- */
-export const NEW_ENROLLMENT_WINDOW_DAYS = 14;
 
 /**
  * Fonction d'amorçage du portail parent : la seule lecture qui échappe à la RLS.

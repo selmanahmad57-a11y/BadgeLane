@@ -99,7 +99,14 @@
     "timezoneLabel": "Time zone",
     "currencyLabel": "Currency",
     "emptyHeading": "Nothing to show yet",
-    "emptyBody": "Your school is connected and isolated. Classes, families and billing arrive in the next milestones."
+    "emptyBody": "Your school is connected and isolated. Classes, families and billing arrive in the next milestones.",
+    "reviewHeading": "{count, plural, one {# enrolment to review} other {# enrolments to review}}",
+    "reviewBody": "Families enrol their children themselves. Nothing here has been reviewed yet — a row leaves this list when you act on it, never because time passed.",
+    "reviewLevels": "Child at {child} · class at {klass}",
+    "reviewNoLevel": "no level",
+    "reviewMismatch": "Level mismatch",
+    "reviewAccept": "Reviewed",
+    "reviewRemove": "Remove"
   },
   "curriculum": {
     "heading": "Curriculum",

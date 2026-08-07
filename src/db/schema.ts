@@ -16,6 +16,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { FAMILY_CONTEXT_SETTING } from "@/config/access";
 import { TENANT_CONTEXT_SETTING } from "@/config/database";
 import { STAFF_ROLES } from "@/config/roles";
 import { ATTENDANCE_STATUSES } from "@/config/attendance";
@@ -56,6 +57,81 @@ function tenantIsolationPolicy(tableName: string, column: string) {
     to: "public",
     using: sql.raw(`${column} = ${CURRENT_ORGANIZATION_ID}`),
     withCheck: sql.raw(`${column} = ${CURRENT_ORGANIZATION_ID}`),
+  });
+}
+
+/**
+ * Expression SQL de la famille courante, posée par `withFamily()`.
+ *
+ * `coalesce(…, '')` traite de la même façon « jamais posé » (NULL) et « posé à
+ * vide » : les deux signifient *aucun contexte famille*, donc le chemin du
+ * personnel, dont le prédicat doit rester exactement celui d'avant.
+ */
+const CURRENT_FAMILY_ID = `current_setting('${FAMILY_CONTEXT_SETTING}', true)`;
+const NO_FAMILY_CONTEXT = `coalesce(${CURRENT_FAMILY_ID}, '') = ''`;
+
+/**
+ * Restriction par famille, ajoutée à l'isolation d'école.
+ *
+ * La comparaison se fait **en texte** des deux côtés. Convertir le paramètre en
+ * `uuid` ferait échouer la requête — et non renvoyer zéro ligne — si la valeur
+ * n'était pas un identifiant valide. Une politique de sécurité doit refuser,
+ * pas planter : un plantage se contourne parfois, un refus jamais.
+ */
+function familyScopedPolicy(tableName: string, familyColumn: string) {
+  const predicate = `organization_id = ${CURRENT_ORGANIZATION_ID}
+    and (${NO_FAMILY_CONTEXT} or ${familyColumn}::text = ${CURRENT_FAMILY_ID})`;
+
+  return pgPolicy(`${tableName}_tenant_isolation`, {
+    as: "permissive",
+    for: "all",
+    to: "public",
+    using: sql.raw(predicate),
+    withCheck: sql.raw(predicate),
+  });
+}
+
+/**
+ * Restriction par famille **via l'élève**, pour les tables qui ne portent pas
+ * de `family_id` et n'en porteront pas.
+ *
+ * La sous-requête est le prix de cette décision. C'est aussi le point faible
+ * théorique de tout RLS : une politique à sous-requête peut être
+ * syntaxiquement irréprochable et ne filtrer strictement rien. D'où le
+ * contrôle négatif dédié dans `parent-authz:verify` — on ne la relit pas, on
+ * l'éprouve.
+ */
+function studentScopedPolicy(tableName: string) {
+  const predicate = `organization_id = ${CURRENT_ORGANIZATION_ID}
+    and (${NO_FAMILY_CONTEXT} or student_id in (
+      select "id" from "student" where "family_id"::text = ${CURRENT_FAMILY_ID}
+    ))`;
+
+  return pgPolicy(`${tableName}_tenant_isolation`, {
+    as: "permissive",
+    for: "all",
+    to: "public",
+    using: sql.raw(predicate),
+    withCheck: sql.raw(predicate),
+  });
+}
+
+/**
+ * La plomberie : visible du personnel, invisible dès qu'un parent est là.
+ *
+ * Le prédicat ne dit pas « ce parent-ci ne voit pas » mais « aucun parent ne
+ * voit » : il n'y a pas de découpe par famille sur ces tables, seulement une
+ * porte fermée.
+ */
+function staffOnlyPolicy(tableName: string, column: string) {
+  const predicate = `${column} = ${CURRENT_ORGANIZATION_ID} and ${NO_FAMILY_CONTEXT}`;
+
+  return pgPolicy(`${tableName}_tenant_isolation`, {
+    as: "permissive",
+    for: "all",
+    to: "public",
+    using: sql.raw(predicate),
+    withCheck: sql.raw(predicate),
   });
 }
 
@@ -151,7 +227,7 @@ export const staffUser = pgTable(
       table.authId,
     ),
     index("staff_user_organization_id_idx").on(table.organizationId),
-    tenantIsolationPolicy("staff_user", "organization_id"),
+    staffOnlyPolicy("staff_user", "organization_id"),
   ],
 );
 
@@ -307,7 +383,7 @@ export const family = pgTable(
   },
   (table) => [
     index("family_organization_id_idx").on(table.organizationId),
-    tenantIsolationPolicy("family", "organization_id"),
+    familyScopedPolicy("family", "id"),
   ],
 );
 
@@ -341,7 +417,7 @@ export const guardian = pgTable(
   (table) => [
     index("guardian_organization_id_idx").on(table.organizationId),
     index("guardian_family_id_idx").on(table.familyId),
-    tenantIsolationPolicy("guardian", "organization_id"),
+    familyScopedPolicy("guardian", "family_id"),
   ],
 );
 
@@ -385,7 +461,7 @@ export const student = pgTable(
     index("student_organization_id_idx").on(table.organizationId),
     index("student_family_id_idx").on(table.familyId),
     index("student_current_level_id_idx").on(table.currentLevelId),
-    tenantIsolationPolicy("student", "organization_id"),
+    familyScopedPolicy("student", "family_id"),
   ],
 );
 
@@ -577,7 +653,7 @@ export const enrollment = pgTable(
     index("enrollment_organization_id_idx").on(table.organizationId),
     index("enrollment_klass_id_idx").on(table.klassId),
     index("enrollment_student_id_idx").on(table.studentId),
-    tenantIsolationPolicy("enrollment", "organization_id"),
+    studentScopedPolicy("enrollment"),
   ],
 );
 
@@ -637,7 +713,7 @@ export const attendance = pgTable(
     ),
     index("attendance_organization_id_idx").on(table.organizationId),
     index("attendance_occurrence_idx").on(table.classOccurrenceId),
-    tenantIsolationPolicy("attendance", "organization_id"),
+    studentScopedPolicy("attendance"),
   ],
 );
 
@@ -701,7 +777,7 @@ export const skillProgress = pgTable(
     ),
     index("skill_progress_organization_id_idx").on(table.organizationId),
     index("skill_progress_student_id_idx").on(table.studentId),
-    tenantIsolationPolicy("skill_progress", "organization_id"),
+    studentScopedPolicy("skill_progress"),
   ],
 );
 
@@ -779,7 +855,7 @@ export const subscription = pgTable(
     ),
     index("subscription_organization_id_idx").on(table.organizationId),
     index("subscription_family_id_idx").on(table.familyId),
-    tenantIsolationPolicy("subscription", "organization_id"),
+    familyScopedPolicy("subscription", "family_id"),
   ],
 );
 
@@ -825,7 +901,7 @@ export const invoice = pgTable(
     ),
     index("invoice_organization_id_idx").on(table.organizationId),
     index("invoice_family_id_idx").on(table.familyId),
-    tenantIsolationPolicy("invoice", "organization_id"),
+    familyScopedPolicy("invoice", "family_id"),
   ],
 );
 
@@ -852,14 +928,38 @@ export const invoice = pgTable(
  * exigerait un contexte de tenant que le webhook n'a pas encore au moment de
  * s'en servir.
  */
-export const stripeEvent = pgTable("stripe_event", {
-  /** Identifiant Stripe (`evt_…`), clé primaire à dessein. */
-  id: text("id").primaryKey(),
-  type: text("type").notNull(),
-  processedAt: timestamp("processed_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const stripeEvent = pgTable(
+  "stripe_event",
+  {
+    /** Identifiant Stripe (`evt_…`), clé primaire à dessein. */
+    id: text("id").primaryKey(),
+    type: text("type").notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  () => [
+    /**
+     * Aucune politique jusqu'à la Semaine 10 — pas même la RLS activée. C'était
+     * défendable tant que seul le personnel se connectait : la table ne porte
+     * que des identifiants d'événements. Le portail parent change la donne. Un
+     * parent n'a rien à voir de la plomberie de facturation, et « rien à en
+     * voir » doit être une règle de la base, pas une conséquence du fait
+     * qu'aucune requête ne la lit.
+     *
+     * Le prédicat ne porte que sur l'absence de contexte famille : la table n'a
+     * pas d'`organization_id`, puisque le webhook doit la lire avant de savoir
+     * de quelle école il s'agit.
+     */
+    pgPolicy("stripe_event_tenant_isolation", {
+      as: "permissive",
+      for: "all",
+      to: "public",
+      using: sql.raw(NO_FAMILY_CONTEXT),
+      withCheck: sql.raw(NO_FAMILY_CONTEXT),
+    }),
+  ],
+);
 
 export type Organization = typeof organization.$inferSelect;
 export type NewOrganization = typeof organization.$inferInsert;

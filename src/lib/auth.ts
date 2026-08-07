@@ -10,6 +10,9 @@ import {
   type OrganizationMembership,
 } from "@/db/sync";
 
+import { findMembershipsForEmails } from "./parent-auth";
+import { verifiedEmailsOf } from "./verified-email";
+
 /**
  * Pont entre la session Clerk et le contexte de tenant de l'application.
  *
@@ -41,7 +44,25 @@ export async function requireOrganizationSession(
   }
 
   if (!orgId) {
-    redirect(localizedPath(locale, routes.createOrganization));
+    /**
+     * Pas d'école sélectionnée — deux visiteurs très différents se retrouvent
+     * ici depuis la Semaine 10.
+     *
+     * Un futur client vient créer son école. Un **parent** n'a délibérément
+     * aucune Organisation : le renvoyer vers la création d'école lui proposerait
+     * de fonder un établissement de natation, ce qui n'est pas ce qu'il vient
+     * faire. On regarde donc s'il est rattaché à une famille avant de trancher.
+     */
+    const visitor = await currentUser();
+    const emails = visitor ? verifiedEmailsOf(visitor) : [];
+    const memberships = await findMembershipsForEmails(emails);
+
+    redirect(
+      localizedPath(
+        locale,
+        memberships.length > 0 ? routes.portal : routes.createOrganization,
+      ),
+    );
   }
 
   const [user, clerk] = await Promise.all([currentUser(), clerkClient()]);

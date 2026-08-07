@@ -20,7 +20,8 @@
     "authz:verify": "tsx scripts/authz-verify.ts",
     "attendance:verify": "tsx scripts/attendance-verify.ts",
     "badges:verify": "tsx scripts/badges-verify.ts",
-    "billing:verify": "tsx scripts/billing-verify.ts"
+    "billing:verify": "tsx scripts/billing-verify.ts",
+    "parent-authz:verify": "tsx scripts/parent-authz-verify.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

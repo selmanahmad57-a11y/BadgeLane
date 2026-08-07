@@ -345,5 +345,17 @@
     "portalHeading": "Portal del cliente",
     "openPortal": "Abrir el portal",
     "portalNote": "Abre el portal alojado por Stripe para esa familia, donde el padre o la madre sustituye una tarjeta caducada y consulta sus facturas. Stripe gestiona los datos de la tarjeta: ni tu escuela ni BadgeLane los ven nunca. El enlace es de un solo uso y caduca pronto, así que ábrelo junto a la familia en lugar de enviarlo por adelantado."
+  },
+  "portal": {
+    "heading": "Mis hijos",
+    "atSchool": "en {school}",
+    "chooseFamily": "Elige un hogar",
+    "noLevel": "Todavía sin nivel",
+    "backToChildren": "Todos mis hijos",
+    "badgesHeading": "Insignias y progreso",
+    "noChildrenHeading": "Todavía no hay ningún hijo en esta ficha",
+    "noChildrenBody": "Tu escuela aún no ha añadido ningún nadador a tu hogar. Ponte en contacto con ella y aparecerán aquí.",
+    "noFamilyHeading": "Ninguna familia vinculada a esta dirección",
+    "noFamilyBody": "Te vinculamos con tus hijos a través de la dirección de correo que tu escuela tiene registrada, una vez que esa dirección está verificada. Comprueba que has iniciado sesión con la dirección que tiene tu escuela y que la has confirmado."
   }
 }

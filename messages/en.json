@@ -345,5 +345,17 @@
     "portalHeading": "Customer portal",
     "openPortal": "Open portal",
     "portalNote": "Opens Stripe's hosted portal for that family, where a parent replaces an expired card and sees their invoices. Card details are handled by Stripe — neither your school nor BadgeLane ever sees them. The link is single-use and short-lived, so open it with the parent rather than sending it ahead."
+  },
+  "portal": {
+    "heading": "My children",
+    "atSchool": "at {school}",
+    "chooseFamily": "Choose a household",
+    "noLevel": "No level yet",
+    "backToChildren": "All my children",
+    "badgesHeading": "Badges and progress",
+    "noChildrenHeading": "No children on this record yet",
+    "noChildrenBody": "Your school has not added any swimmers to your household yet. Get in touch with them and they will appear here.",
+    "noFamilyHeading": "No family linked to this address",
+    "noFamilyBody": "We link you to your children through the email address your school holds for you, once that address is verified. Check that you signed in with the address your school has, and that you confirmed it."
   }
 }

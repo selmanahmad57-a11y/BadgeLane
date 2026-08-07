@@ -22,7 +22,21 @@ export const routes = {
   locations: "/locations",
   staff: "/staff",
   billing: "/billing",
+
+  /**
+   * Le portail parent, sous son propre préfixe.
+   *
+   * Séparé de la console à dessein : deux sujets différents, deux arborescences
+   * différentes. Aucun écran ne peut être atteint « par accident » depuis
+   * l'autre côté, et lire l'URL suffit à savoir qui est censé la voir.
+   */
+  portal: "/portal",
 } as const;
+
+/** Chemin d'un enfant vu **par son parent**. */
+export function portalStudentPath(studentId: string): string {
+  return `${routes.portal}/students/${studentId}`;
+}
 
 /** Chemin d'une fiche famille. */
 export function familyPath(familyId: string): string {
@@ -51,11 +65,16 @@ export const AUTHENTICATED_ROUTES: readonly AppRoute[] = [
   routes.locations,
   routes.staff,
   routes.billing,
+  routes.portal,
 ];
 
 /**
  * Routes exigeant en plus une organisation active (une école sélectionnée).
  * Sous-ensemble de `AUTHENTICATED_ROUTES`.
+ *
+ * ⚠️ `routes.portal` n'y figure pas, et ne doit jamais y figurer : un parent
+ * n'appartient à aucune Organisation Clerk. Exiger une organisation active sur
+ * le portail le renverrait vers la création d'école.
  */
 export const ORGANIZATION_SCOPED_ROUTES: readonly AppRoute[] = [
   routes.dashboard,

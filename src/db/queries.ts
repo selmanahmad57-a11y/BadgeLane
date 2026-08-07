@@ -55,7 +55,7 @@ import {
   type Term,
   type TuitionPlan,
 } from "./schema";
-import { withTenant } from "./tenant";
+import { withTenant, type TenantTransaction } from "./tenant";
 
 /**
  * Lectures de la console d'administration.
@@ -800,7 +800,26 @@ export async function getStudentProgress(
   organizationId: string,
   studentId: string,
 ): Promise<StudentLevelProgress[]> {
-  return withTenant(organizationId, async (tx) => {
+  return withTenant(organizationId, (tx) =>
+    readStudentProgress(tx, organizationId, studentId),
+  );
+}
+
+/**
+ * Le calcul lui-même, sur une transaction déjà ouverte.
+ *
+ * Extrait pour que le portail parent le réutilise **à l'identique** sous
+ * `withFamily()` : la progression d'un enfant est la même quel que soit le
+ * sujet qui la regarde, seule la découpe d'accès change. En écrire une seconde
+ * version côté parent, c'est se garantir qu'un jour les deux divergeront et
+ * qu'un badge s'affichera différemment selon l'écran.
+ */
+export async function readStudentProgress(
+  tx: TenantTransaction,
+  organizationId: string,
+  studentId: string,
+): Promise<StudentLevelProgress[]> {
+  {
     const [levels, skills, marks] = await Promise.all([
       tx
         .select({
@@ -843,7 +862,7 @@ export async function getStudentProgress(
         })),
       };
     });
-  });
+  }
 }
 
 /**

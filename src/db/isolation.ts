@@ -1,5 +1,10 @@
 import { sql, type SQL } from "drizzle-orm";
 
+import {
+  ACCESS_CATEGORIES,
+  accessCategoryOf,
+  FAMILY_CONTEXT_SETTING,
+} from "@/config/access";
 import { TENANT_CONTEXT_SETTING } from "@/config/database";
 
 /**
@@ -222,6 +227,73 @@ export async function checkTenantIsolation(
       if (!expression.includes(TENANT_CONTEXT_SETTING)) {
         problems.push(
           `${table.tablename}.${policy.policyname} : la politique ne référence pas « ${TENANT_CONTEXT_SETTING} », la clé posée par withTenant().`,
+        );
+      }
+    }
+  }
+
+  /**
+   * ── Le second axe : chaque table appartient à une catégorie, et une seule ──
+   *
+   * Sans ce contrôle, la prochaine table créée serait lisible par un parent par
+   * défaut. Silencieusement — ce qui est la pire façon d'ouvrir un accès : rien
+   * ne casse, rien n'alerte, et la fuite attend d'être découverte de l'extérieur.
+   */
+  for (const table of tables) {
+    const category = accessCategoryOf(table.tablename);
+
+    if (category === null) {
+      problems.push(
+        `${table.tablename} : n'est déclarée dans aucune catégorie d'accès de src/config/access.ts. Une table non classée serait lisible par un parent par défaut — dis explicitement si elle relève du catalogue de l'école, de la portée famille, ou de la plomberie.`,
+      );
+      continue;
+    }
+
+    const declaredTwice = Object.entries(ACCESS_CATEGORIES).filter(
+      ([, names]) => (names as readonly string[]).includes(table.tablename),
+    );
+
+    if (declaredTwice.length > 1) {
+      problems.push(
+        `${table.tablename} : déclarée dans ${declaredTwice.length} catégories d'accès (${declaredTwice.map(([name]) => name).join(", ")}). Une table n'a qu'une découpe.`,
+      );
+    }
+
+    /**
+     * Les catégories qui restreignent doivent le faire *dans la politique*.
+     * Déclarer une table « portée famille » sans que sa politique mentionne le
+     * paramètre de famille laisserait la déclaration mentir sur ce que fait la
+     * base — exactement le genre d'écart que ce module existe pour attraper.
+     */
+    const restricted =
+      category === "familyScoped" ||
+      category === "studentScoped" ||
+      category === "staffOnly";
+
+    if (!restricted) continue;
+
+    /**
+     * Répété à dessein. La boucle précédente saute les tables sans
+     * `organization_id` — `stripe_event` en est une — et ne vérifie donc ni son
+     * activation ni son forçage. C'est exactement par là que la RLS lui avait
+     * échappé jusqu'à la Semaine 10.
+     */
+    if (!table.rls_enabled || !table.rls_forced) {
+      problems.push(
+        `${table.tablename} : déclarée « ${category} », mais la RLS n'est pas ${table.rls_enabled ? "forcée" : "activée"}. Une catégorie restreinte sans RLS ne restreint rien.`,
+      );
+    }
+
+    const tablePolicies = policies.filter(
+      (policy) => policy.tablename === table.tablename,
+    );
+
+    for (const policy of tablePolicies) {
+      const expression = `${policy.qual ?? ""} ${policy.with_check ?? ""}`;
+
+      if (!expression.includes(FAMILY_CONTEXT_SETTING)) {
+        problems.push(
+          `${table.tablename}.${policy.policyname} : déclarée « ${category} » dans src/config/access.ts, mais sa politique ne référence pas « ${FAMILY_CONTEXT_SETTING} ». La déclaration promet une restriction que la base n'applique pas.`,
         );
       }
     }

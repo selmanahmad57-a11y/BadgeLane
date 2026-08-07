@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/neon-serverless";
 import ws from "ws";
 
 import { TENANT_CONTEXT_SETTING } from "../src/config/database";
+import { routes } from "../src/config/routes";
 import { SORT_ORDER_STEP } from "../src/config/validation";
 import { occurrenceDatesFor } from "../src/lib/occurrences";
 import {
@@ -124,6 +125,7 @@ async function main(): Promise<number> {
     return 1;
   }
 
+
   neonConfig.webSocketConstructor =
     globalThis.WebSocket ?? (ws as unknown as typeof globalThis.WebSocket);
 
@@ -141,7 +143,12 @@ async function main(): Promise<number> {
 
     return purge
       ? await purgeOrganization(db, organizationId)
-      : await seedOrganization(db, organizationId, preferredLanguage);
+      : await seedOrganization(
+          db,
+          organizationId,
+          preferredLanguage,
+          process.env.DEMO_PARENT_EMAIL?.trim().toLowerCase(),
+        );
   } finally {
     await pool.end();
   }
@@ -280,6 +287,12 @@ async function seedOrganization(
   db: ReturnType<typeof drizzle>,
   organizationId: string,
   preferredLanguage: string,
+  /**
+   * Adresse réelle du parent de démonstration, pour essayer le portail.
+   * Facultative : sans elle la démonstration reste complète, seule la
+   * connexion parent est indisponible.
+   */
+  demoParentEmail: string | undefined,
 ): Promise<number> {
   return db.transaction(async (tx) => {
     await tx.execute(
@@ -320,11 +333,27 @@ async function seedOrganization(
 
     if (!existing) {
       await tx.insert(guardian).values(
-      DEMO.guardians.map((entry) => ({
+      DEMO.guardians.map((entry, position) => ({
         organizationId,
         familyId: createdFamily.id,
         name: entry.name,
-        email: entry.email,
+        /**
+         * Le premier tuteur peut recevoir une **vraie** adresse, pour que le
+         * portail parent soit essayable.
+         *
+         * Les adresses de démonstration sont en `@badgelane.invalid` : un TLD
+         * réservé, que personne ne peut posséder. C'est voulu — aucune donnée
+         * fictive ne doit pouvoir écrire à quelqu'un par accident. Mais c'est
+         * aussi ce qui rend la connexion impossible : le rattachement se fait
+         * sur une adresse **vérifiée**, et une boîte inexistante ne se vérifie
+         * pas.
+         *
+         * D'où `DEMO_PARENT_EMAIL`, facultative. Renseignée, elle remplace
+         * l'adresse du premier tuteur ; absente, la démonstration reste
+         * complète mais sans connexion parent — et le script le dit.
+         */
+        email:
+          position === 0 && demoParentEmail ? demoParentEmail : entry.email,
         preferredLanguage,
       })),
       );
@@ -553,6 +582,9 @@ async function seedOrganization(
         existingTerm
           ? "  planning    déjà présent"
           : `  planning    « ${DEMO.term.name} », ${createdClasses} cours, ${generatedOccurrences} séances générées`,
+        demoParentEmail
+          ? `  portail     ${DEMO.guardians[0].name} est joignable à ${demoParentEmail} — connecte-toi avec cette adresse, vérifie-la, puis ouvre /${preferredLanguage}${routes.portal}`
+          : `  portail     aucun DEMO_PARENT_EMAIL : le portail parent ne sera pas essayable, les adresses @${DEMO_DOMAIN} ne pouvant pas être vérifiées`,
         "",
         `Tout est préfixé « ${DEMO_PREFIX.trim()} » et adressé en @${DEMO_DOMAIN} pour être repérable et purgeable.`,
       ].join("\n"),

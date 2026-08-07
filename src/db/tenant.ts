@@ -2,6 +2,7 @@ import "server-only";
 
 import { sql } from "drizzle-orm";
 
+import { FAMILY_CONTEXT_SETTING } from "@/config/access";
 import {
   TENANT_CONTEXT_IS_TRANSACTION_LOCAL,
   TENANT_CONTEXT_SETTING,
@@ -46,6 +47,46 @@ export async function withTenant<T>(
   return db.transaction(async (tx) => {
     await tx.execute(
       sql`select set_config(${TENANT_CONTEXT_SETTING}, ${organizationId}, ${TENANT_CONTEXT_IS_TRANSACTION_LOCAL})`,
+    );
+
+    return run(tx);
+  });
+}
+
+/**
+ * Exécute `run` dans une transaction restreinte à **une famille** d'une école.
+ *
+ * C'est le seul chemin qui pose le second paramètre de session. Tout le code
+ * antérieur passe par `withTenant()`, qui ne le pose jamais : les politiques
+ * testent d'abord son absence, et se comportent alors exactement comme avant.
+ *
+ * ── Ce que cette fonction garantit, et ce qu'elle ne garantit pas ────────────
+ *
+ * Elle garantit qu'aucune ligne d'une autre famille ne peut être lue ni écrite,
+ * y compris par une requête maladroite qui aurait oublié son `where`. C'est la
+ * seconde barrière du §7, appliquée au nouvel axe.
+ *
+ * Elle ne garantit pas que `familyId` soit **le bon** : cela reste la
+ * responsabilité de `requireFamilySession()`, qui le dérive d'une adresse
+ * e-mail vérifiée par Clerk. Une barrière filtre, elle n'authentifie pas.
+ */
+export async function withFamily<T>(
+  organizationId: string,
+  familyId: string,
+  run: (tx: TenantTransaction) => Promise<T>,
+): Promise<T> {
+  if (!organizationId || !familyId) {
+    throw new Error(
+      "withFamily() a été appelé sans école ou sans famille : la requête aurait été exécutée hors de tout contexte parent.",
+    );
+  }
+
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select set_config(${TENANT_CONTEXT_SETTING}, ${organizationId}, ${TENANT_CONTEXT_IS_TRANSACTION_LOCAL})`,
+    );
+    await tx.execute(
+      sql`select set_config(${FAMILY_CONTEXT_SETTING}, ${familyId}, ${TENANT_CONTEXT_IS_TRANSACTION_LOCAL})`,
     );
 
     return run(tx);

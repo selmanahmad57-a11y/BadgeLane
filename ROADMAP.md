@@ -88,6 +88,12 @@ ponctuelles de Stripe, pas les *Subscriptions* — d'où le report de
 
 ### Semaine 12 — Sécurité, conformité & polish
 🎯 Prêt pour de vraies données et de vrais paiements.
+➕ **Réglages de l'école, à construire** : aucun écran ne permet aujourd'hui de
+corriger le **pays**, la **devise** ou le **fuseau** d'une école — ils sont posés
+à la création depuis l'environnement, et il faut une requête SQL pour les
+changer. À traiter avec la règle de cohérence : *la devise suit le pays*
+(FR → EUR, US → USD), par organisation. Indispensable le jour où des écoles US
+et européennes coexistent sur la même instance.
 🛠️ Bug bash + cas limites · **revue autorisations (rôles) + RLS Neon** · tests des flux critiques (auth, paiements, isolation tenant) · perf.
 🔒 **Audit de sécurité par un dev senior** (ponctuel, quelques heures) : RLS, auth, Stripe, endpoint widget.
 ⚖️ Docs légaux : politique de confidentialité, **DPA** (tu es sous-traitant), flux de **consentement parental (COPPA/RGPD)**, CGV.

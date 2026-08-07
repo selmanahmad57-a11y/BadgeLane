@@ -84,6 +84,12 @@ function main(): number {
     `Référence : ${referenceLocale} (${reference.size} clés) — comparée à ${[...catalogs.keys()].filter((l) => l !== referenceLocale).join(", ") || "aucune autre langue"}`,
   );
 
+  const { problems: usageProblems, checked, dynamic } = checkUsedKeys(reference);
+  problems.push(...usageProblems);
+  console.log(
+    `Usage : ${checked} clé(s) référencée(s) dans le code, ${dynamic} construite(s) dynamiquement (non vérifiables).`,
+  );
+
   if (problems.length === 0) {
     console.log("Catalogues de traduction : OK.");
     return 0;
@@ -94,6 +100,80 @@ function main(): number {
     console.error(`  - ${problem}`);
   }
   return 1;
+}
+
+/** Fichiers de l'application susceptibles d'appeler une traduction. */
+const SOURCE_ROOT = "src";
+
+/**
+ * Vérifie que chaque clé **utilisée dans le code** existe dans la référence.
+ *
+ * ── Ce que la parité ne peut pas voir ────────────────────────────────────────
+ *
+ * Comparer les catalogues entre eux prouve qu'ils disent la même chose — pas
+ * qu'ils disent ce que le code demande. Une clé absente de **toutes** les
+ * langues garde la parité parfaite et fait un `MISSING_MESSAGE` à l'écran.
+ *
+ * C'est exactement ce qui vient d'arriver : `i18n:verify` vert, portail cassé.
+ * Le contrôle passait parce qu'il regardait le mauvais côté de la relation.
+ *
+ * ── Comment les clés sont retrouvées ─────────────────────────────────────────
+ *
+ * Chaque fichier déclare son espace de noms via `getTranslations("x")` ou
+ * `useTranslations("x")`, puis appelle `t("clé")`. On recompose `x.clé`.
+ *
+ * Les clés **construites** — `t(`status_${valeur}`)` — ne sont pas résolubles
+ * statiquement. Elles sont comptées et annoncées plutôt que passées sous
+ * silence : un contrôle qui ignore ce qu'il ne sait pas faire donne une
+ * confiance qu'il ne mérite pas.
+ */
+function checkUsedKeys(reference: Set<string>): {
+  problems: string[];
+  checked: number;
+  dynamic: number;
+} {
+  const problems: string[] = [];
+  let checked = 0;
+  let dynamic = 0;
+
+  const walk = (directory: string): string[] =>
+    readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(directory, entry.name);
+      if (entry.isDirectory()) return walk(full);
+      return entry.isFile() && /\.tsx?$/.test(entry.name) ? [full] : [];
+    });
+
+  for (const file of walk(SOURCE_ROOT)) {
+    const source = readFileSync(file, "utf8");
+
+    const namespaces = [
+      ...source.matchAll(/(?:get|use)Translations\(\s*"([^"]+)"/g),
+    ].map((match) => match[1]);
+
+    if (namespaces.length === 0) continue;
+
+    /** Un fichier à plusieurs espaces de noms rend l'attribution ambiguë. */
+    const unique = [...new Set(namespaces)];
+
+    dynamic += [...source.matchAll(/\bt\(`/g)].length;
+
+    for (const call of source.matchAll(/\bt\(\s*"([^"]+)"/g)) {
+      const key = call[1];
+      checked += 1;
+
+      const resolvable = unique.some((namespace) =>
+        reference.has(`${namespace}.${key}`),
+      );
+
+      if (!resolvable) {
+        problems.push(
+          `${file.replace(/\\/g, "/")} : « ${unique.join(" | ")}.${key} » est appelée dans le code mais absente de la référence. La parité entre catalogues ne l'aurait pas vue — elle manque des deux côtés.`,
+        );
+      }
+    }
+  }
+
+  return { problems, checked, dynamic };
 }
 
 process.exitCode = main();

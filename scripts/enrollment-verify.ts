@@ -2,6 +2,8 @@ import { neonConfig, Pool, type PoolClient } from "@neondatabase/serverless";
 import { config as loadEnvFile } from "dotenv";
 import ws from "ws";
 
+import { FAMILY_CONTEXT_SETTING } from "../src/config/access";
+import { SEAT_TAKING_STATUSES } from "../src/config/enrollment";
 import { TENANT_CONTEXT_SETTING } from "../src/config/database";
 
 /**
@@ -41,6 +43,8 @@ type Fixture = {
   organizationId: string;
   klassId: string;
   studentIds: [string, string];
+  /** Un foyer distinct par élève : la course parent oppose deux familles. */
+  familyIds: [string, string];
 };
 
 /**
@@ -121,18 +125,32 @@ async function createFixture(
     ],
   );
 
-  const family = await client.query(
+  /**
+   * DEUX foyers, un élève chacun.
+   *
+   * La course du personnel se moque de la famille ; celle des parents non — il
+   * lui faut deux foyers distincts, sans quoi le contexte famille ne
+   * discriminerait rien et le contrôle négatif ne pourrait pas échouer.
+   */
+  const families = await client.query(
     `insert into family (organization_id, primary_guardian_name, email, preferred_language)
-     values ($1, 'probe', $2, $3) returning id`,
-    [organizationId, `probe@${organizationId}.invalid`, defaults.locale],
+     values ($1, 'probe A', $2, $4),
+            ($1, 'probe B', $3, $4)
+     returning id`,
+    [
+      organizationId,
+      `probe-a@${organizationId}.invalid`,
+      `probe-b@${organizationId}.invalid`,
+      defaults.locale,
+    ],
   );
 
   const students = await client.query(
     `insert into student (organization_id, family_id, first_name, last_name, date_of_birth)
      values ($1, $2, 'Probe', 'One', '2015-01-01'),
-            ($1, $2, 'Probe', 'Two', '2015-01-02')
+            ($1, $3, 'Probe', 'Two', '2015-01-02')
      returning id`,
-    [organizationId, family.rows[0].id],
+    [organizationId, families.rows[0].id, families.rows[1].id],
   );
 
   await client.query("commit");
@@ -141,6 +159,7 @@ async function createFixture(
     organizationId,
     klassId: klass.rows[0].id,
     studentIds: [students.rows[0].id, students.rows[1].id],
+    familyIds: [families.rows[0].id, families.rows[1].id],
   };
 }
 
@@ -191,6 +210,84 @@ async function attemptEnrolment(
 
   await client.query("commit");
   return status;
+}
+
+/**
+ * Pose le contexte d'école ET de famille — le chemin du parent.
+ *
+ * Toujours local à la transaction : c'est la règle que `db:verify` fait
+ * respecter sur tout le dépôt depuis la Semaine 10.
+ */
+async function setFamily(client: PoolClient, familyId: string) {
+  await client.query("select set_config($1, $2, true)", [
+    FAMILY_CONTEXT_SETTING,
+    familyId,
+  ]);
+}
+
+/**
+ * Une inscription tentée **par un parent**, dans son contexte famille.
+ *
+ * `useFunction` isole ce que `count_seats_taken` apporte réellement :
+ *
+ *  - `true`  — le chemin réel : le décompte échappe à la RLS et voit la file
+ *              entière, y compris les inscriptions des autres foyers ;
+ *  - `false` — contrôle négatif : le même code, avec le même verrou, mais
+ *              comptant `enrollment` directement. Sous contexte famille, chaque
+ *              parent ne voit que ses propres lignes, lit « 0 occupée » et
+ *              entre dans un bassin plein.
+ *
+ * Le verrou est identique dans les deux cas. Ce qui diffère est la seule chose
+ * qu'on veut mesurer.
+ */
+async function attemptParentEnrolment(
+  client: PoolClient,
+  fixture: Fixture,
+  index: 0 | 1,
+  useFunction: boolean,
+): Promise<{ status: string; taken: number }> {
+  await client.query("begin");
+  await setTenant(client, fixture.organizationId);
+  await setFamily(client, fixture.familyIds[index]);
+
+  const klass = await client.query(
+    "select capacity from klass where id = $1 for update",
+    [fixture.klassId],
+  );
+
+  const occupied = useFunction
+    ? await client.query(
+        "select count_seats_taken($1::uuid, $2::text[]) as taken",
+        [fixture.klassId, [...SEAT_TAKING_STATUSES]],
+      )
+    : await client.query(
+        `select count(*)::int as taken from enrollment
+         where klass_id = $1 and status in ('active', 'paused')`,
+        [fixture.klassId],
+      );
+
+  /** Fenêtre volontaire : les deux parents se croisent réellement. */
+  await new Promise((resolve) => setTimeout(resolve, 150));
+
+  const taken = Number(occupied.rows[0].taken);
+  const hasSeat = taken < klass.rows[0].capacity;
+  const status = hasSeat ? "active" : "waitlisted";
+
+  await client.query(
+    `insert into enrollment (organization_id, klass_id, student_id, status, waitlisted_at, start_date)
+     values ($1, $2, $3, $4, $5, $6)`,
+    [
+      fixture.organizationId,
+      fixture.klassId,
+      fixture.studentIds[index],
+      status,
+      hasSeat ? null : new Date(),
+      hasSeat ? "2026-09-01" : null,
+    ],
+  );
+
+  await client.query("commit");
+  return { status, taken };
 }
 
 async function countActive(
@@ -254,6 +351,8 @@ async function main(): Promise<number> {
 
   let locked: Fixture | null = null;
   let unlocked: Fixture | null = null;
+  let parentLocked: Fixture | null = null;
+  let parentNaive: Fixture | null = null;
 
   try {
     console.log("\nCourse sur la dernière place — AVEC verrou");
@@ -294,10 +393,68 @@ async function main(): Promise<number> {
       unlockedActive === 2,
       `${unlockedActive} active(s) — si ce contrôle échoue, le test ne prouve rien`,
     );
+    // ── La même course, par la porte parent ────────────────────────────────
+    //
+    // Depuis la Semaine 10, `enrollment` est restreinte aux enfants du foyer.
+    // Le verrou seul ne suffit donc plus : c'est le DÉCOMPTE qui doit voir
+    // au-delà du foyer, et c'est ce que `count_seats_taken` apporte.
+
+    console.log("\nCourse entre DEUX PARENTS — décompte par la fonction");
+
+    parentLocked = await createFixture(setup, defaults);
+
+    const parentResults = await Promise.all([
+      attemptParentEnrolment(first, parentLocked, 0, true),
+      attemptParentEnrolment(second, parentLocked, 1, true),
+    ]);
+
+    const parentActive = await countActive(setup, parentLocked);
+
+    check(
+      "une seule place attribuée, sous contexte famille",
+      parentActive === 1,
+      `${parentActive} active(s)`,
+    );
+    check(
+      "l'autre parent bascule en liste d'attente",
+      parentResults.filter((entry) => entry.status === "waitlisted").length === 1,
+      parentResults.map((entry) => entry.status).join(" / "),
+    );
+    check(
+      "l'un des deux a compté une place occupée par L'AUTRE foyer",
+      parentResults.some((entry) => entry.taken === 1),
+      parentResults.map((entry) => `vu ${entry.taken}`).join(" / "),
+    );
+
+    console.log(
+      "\nContrôle négatif — même verrou, mais décompte lu directement",
+    );
+
+    parentNaive = await createFixture(setup, defaults);
+
+    const naiveResults = await Promise.all([
+      attemptParentEnrolment(first, parentNaive, 0, false),
+      attemptParentEnrolment(second, parentNaive, 1, false),
+    ]);
+
+    const naiveActive = await countActive(setup, parentNaive);
+
+    check(
+      "sans la fonction, les deux parents croient le cours vide",
+      naiveResults.every((entry) => entry.taken === 0),
+      naiveResults.map((entry) => `vu ${entry.taken}`).join(" / "),
+    );
+    check(
+      "et la capacité est dépassée malgré le verrou",
+      naiveActive === 2,
+      `${naiveActive} active(s) — si ce contrôle échoue, le précédent ne prouve rien`,
+    );
   } finally {
     /** Les données de sonde sont validées en base : elles doivent partir. */
     if (locked) await dropFixture(setup, locked).catch(() => {});
     if (unlocked) await dropFixture(setup, unlocked).catch(() => {});
+    if (parentLocked) await dropFixture(setup, parentLocked).catch(() => {});
+    if (parentNaive) await dropFixture(setup, parentNaive).catch(() => {});
 
     setup.release();
     first.release();

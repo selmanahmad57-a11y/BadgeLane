@@ -477,6 +477,125 @@ async function main(): Promise<number> {
       seenByParent.map((row) => `${row.achieved}/${row.total}`).join(", "),
     );
 
+    // ── Les agrégats hors foyer : parent et personnel doivent s'accorder ──
+    //
+    // Toute valeur dérivée par agrégation AU-DELÀ du foyer est suspecte par
+    // défaut : sous contexte famille, elle rend un nombre plausible et faux.
+    // L'obligation est donc mécanique — aucune ne se livre sans son contrôle
+    // croisé parent == personnel.
+
+    console.log("\nAgrégats hors foyer : parent == personnel");
+
+    await asStaff(client, organizationId);
+
+    const term = (
+      await client.query(
+        `insert into term (organization_id, name, start_date, end_date)
+         values ($1, 'Sonde', '2026-09-01', '2026-12-01') returning id`,
+        [organizationId],
+      )
+    ).rows[0].id as string;
+    const spot = (
+      await client.query(
+        `insert into location (organization_id, name) values ($1, 'Bassin') returning id`,
+        [organizationId],
+      )
+    ).rows[0].id as string;
+    const course = (
+      await client.query(
+        `insert into klass (organization_id, term_id, program_id, level_id, location_id,
+                            title, day_of_week, start_time, duration_min, capacity)
+         values ($1, $2, $3, $4, $5, 'Sonde', 2, '17:00', 30, 1) returning id`,
+        [organizationId, term, level, levelId, spot],
+      )
+    ).rows[0].id as string;
+
+    /** L'autre foyer prend la place ; le nôtre se met en attente derrière lui. */
+    const rivalStudent = students.find((row) => row.family_id === theirs)!;
+    const mineStudent = students.find((row) => row.family_id === mine)!;
+
+    await client.query(
+      `insert into enrollment (organization_id, klass_id, student_id, status, start_date)
+       values ($1, $2, $3, 'active', '2026-09-01')`,
+      [organizationId, course, rivalStudent.id],
+    );
+    await client.query(
+      `insert into enrollment (organization_id, klass_id, student_id, status, waitlisted_at)
+       values ($1, $2, $3, 'waitlisted', now())`,
+      [organizationId, course, mineStudent.id],
+    );
+
+    const seatsByStaff = Number(
+      (
+        await client.query(
+          "select count_seats_taken($1::uuid, $2::text[]) n",
+          [course, ["active", "paused"]],
+        )
+      ).rows[0].n,
+    );
+
+    await asParent(client, organizationId, mine);
+
+    const seatsByParent = Number(
+      (
+        await client.query(
+          "select count_seats_taken($1::uuid, $2::text[]) n",
+          [course, ["active", "paused"]],
+        )
+      ).rows[0].n,
+    );
+
+    /** Ce que lirait une requête naïve sous contexte famille. */
+    const seatsNaive = Number(
+      (
+        await client.query(
+          `select count(*)::int n from enrollment
+           where klass_id = $1 and status in ('active','paused')`,
+          [course],
+        )
+      ).rows[0].n,
+    );
+
+    check(
+      "places occupées : le parent lit le même nombre que le personnel",
+      seatsByParent === seatsByStaff && seatsByStaff === 1,
+      `personnel ${seatsByStaff}, parent ${seatsByParent}`,
+    );
+    check(
+      "et une lecture directe, elle, mentirait",
+      seatsNaive === 0,
+      `lecture directe : ${seatsNaive} — si ce contrôle échoue, le précédent ne prouve rien`,
+    );
+
+    const rankByParent = Number(
+      (await client.query("select waitlist_rank_for_family($1) r", [course]))
+        .rows[0].r,
+    );
+    check(
+      "rang en liste d'attente : le parent est 1er derrière l'autre foyer",
+      rankByParent === 1,
+      String(rankByParent),
+    );
+
+    // ── L'écriture parent est bornée par le même prédicat ─────────────────
+
+    await client.query("savepoint cross_family_enrolment");
+    const foreignEnrolment = await client
+      .query(
+        `insert into enrollment (organization_id, klass_id, student_id, status, waitlisted_at)
+         values ($1, $2, $3, 'waitlisted', now())`,
+        [organizationId, course, rivalStudent.id],
+      )
+      .then(() => "acceptée")
+      .catch((error: { code?: string }) => error.code ?? "refusée");
+    await client.query("rollback to savepoint cross_family_enrolment");
+
+    check(
+      "inscrire l'enfant d'un autre foyer est refusé",
+      foreignEnrolment !== "acceptée",
+      String(foreignEnrolment),
+    );
+
     // ── 4. La plomberie ───────────────────────────────────────────────────
 
     await asParent(client, organizationId, mine);

@@ -7,8 +7,17 @@ import { isStripeConfigured } from "@/config/env.stripe";
 import { can } from "@/config/permissions";
 import { requireOrganizationSession } from "@/lib/auth";
 import { getStripe } from "@/lib/stripe";
+import { SELECT_CLASS } from "@/components/locale-select";
+import { Input } from "@/components/ui/input";
+import { TUITION_INTERVALS } from "@/config/billing";
+import { FIELD_LIMITS } from "@/config/validation";
+import { getBillingOverview } from "@/db/queries";
 
-import { startStripeOnboarding } from "./actions";
+import {
+  createCheckoutLink,
+  createTuitionPlan,
+  startStripeOnboarding,
+} from "./actions";
 
 type BillingPageProps = {
   params: Promise<{ locale: string }>;
@@ -52,6 +61,21 @@ export default async function BillingPage({ params }: BillingPageProps) {
   const capabilities = account?.configuration?.merchant?.capabilities;
   const ready = capabilities?.card_payments?.status === "active";
   const started = Boolean(accountId);
+
+  /** Tarifs, abonnements et factures ne s'affichent qu'une fois le compte prêt. */
+  const overview = ready
+    ? await getBillingOverview(session.organization.id)
+    : null;
+
+  /**
+   * Les montants sont formatés dans la langue du visiteur et la devise de
+   * l'école — jamais concaténés à la main : une virgule décimale, un espace
+   * insécable et la place du symbole changent d'une langue à l'autre.
+   */
+  const money = new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: session.organization.currency,
+  });
 
   return (
     <ConsoleShell title={t("heading")} description={t("intro")}>
@@ -106,6 +130,168 @@ export default async function BillingPage({ params }: BillingPageProps) {
           </CardContent>
         </Card>
       )}
+
+      {overview ? (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("plansHeading")}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {overview.plans.length === 0 ? (
+                <p className="text-muted-foreground text-sm">{t("noPlans")}</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {overview.plans.map((plan) => (
+                    <li
+                      key={plan.id}
+                      className="flex flex-wrap items-center justify-between gap-2 text-sm"
+                    >
+                      <span className="font-medium">{plan.name}</span>
+                      <span className="text-muted-foreground">
+                        {money.format(plan.amount / 100)} ·{" "}
+                        {t(`interval_${plan.interval}`)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {canManage ? (
+                <ActionForm action={createTuitionPlan} submitLabel={t("addPlan")} size="sm">
+                  <Input
+                    name="name"
+                    required
+                    maxLength={FIELD_LIMITS.name}
+                    placeholder={t("planNamePlaceholder")}
+                    aria-label={t("planName")}
+                    className="w-full sm:w-56"
+                  />
+                  <Input
+                    name="amount"
+                    required
+                    inputMode="decimal"
+                    placeholder={t("amountPlaceholder")}
+                    aria-label={t("amount")}
+                    className="w-full sm:w-32"
+                  />
+                  <select
+                    name="interval"
+                    aria-label={t("interval")}
+                    className={SELECT_CLASS}
+                  >
+                    {TUITION_INTERVALS.map((value) => (
+                      <option key={value} value={value}>
+                        {t(`interval_${value}`)}
+                      </option>
+                    ))}
+                  </select>
+                </ActionForm>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          {canManage && overview.plans.length > 0 && overview.families.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("subscribeHeading")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <ActionForm action={createCheckoutLink} submitLabel={t("openCheckout")} size="sm">
+                  <select name="familyId" aria-label={t("family")} className={SELECT_CLASS}>
+                    {overview.families.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select name="planId" aria-label={t("plan")} className={SELECT_CLASS}>
+                    {overview.plans.map((plan) => (
+                      <option key={plan.id} value={plan.id}>
+                        {plan.name} — {money.format(plan.amount / 100)}
+                      </option>
+                    ))}
+                  </select>
+                </ActionForm>
+                <p className="text-muted-foreground text-sm text-pretty">
+                  {t("checkoutNote")}
+                </p>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("subscriptionsHeading")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {overview.subscriptions.length === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  {t("noSubscriptions")}
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-2 text-sm">
+                  {overview.subscriptions.map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="flex flex-wrap items-center justify-between gap-2"
+                    >
+                      <span>
+                        {entry.familyName}
+                        {entry.planName ? (
+                          <span className="text-muted-foreground ms-2">
+                            {entry.planName}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {entry.status}
+                        {entry.currentPeriodEnd
+                          ? ` · ${entry.currentPeriodEnd.toISOString().slice(0, 10)}`
+                          : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("invoicesHeading")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {overview.invoices.length === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  {t("noInvoices")}
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-2 text-sm">
+                  {overview.invoices.map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="flex flex-wrap items-center justify-between gap-2"
+                    >
+                      <span>{entry.familyName}</span>
+                      <span className="text-muted-foreground">
+                        {new Intl.NumberFormat(locale, {
+                          style: "currency",
+                          currency: entry.currency.toUpperCase(),
+                        }).format(entry.amount / 100)}{" "}
+                        · {entry.status}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-muted-foreground mt-3 text-sm text-pretty">
+                {t("mirrorNote")}
+              </p>
+            </CardContent>
+          </Card>
+        </>
+      ) : null}
     </ConsoleShell>
   );
 }

@@ -261,7 +261,8 @@
     "emailInvalid": "That email address does not look valid.",
     "invitationRejected": "This address has already been invited, or already belongs to the school.",
     "tooManyOccurrences": "This term would create {count} sessions, above the limit of {limit}. Check its dates.",
-    "stripeNotConfigured": "Billing is not set up on this installation yet."
+    "stripeNotConfigured": "Billing is not set up on this installation yet.",
+    "stripeNotConnected": "Connect your school's Stripe account first."
   },
   "today": {
     "heading": "Today at the pool",
@@ -307,6 +308,26 @@
     "chargesDisabled": "Not yet enabled",
     "connect": "Connect Stripe",
     "resume": "Finish setting up",
-    "merchantNote": "Your school is the merchant of record: tuition is paid to your Stripe account, and BadgeLane takes no cut of it. Card details never touch our servers."
+    "merchantNote": "Your school is the merchant of record: tuition is paid to your Stripe account, and BadgeLane takes no cut of it. Card details never touch our servers.",
+    "plansHeading": "Tuition plans",
+    "noPlans": "No plan yet. Create one to start subscribing families.",
+    "planName": "Plan name",
+    "planNamePlaceholder": "Weekly lesson",
+    "amount": "Amount",
+    "amountPlaceholder": "45.00",
+    "interval": "Billed",
+    "interval_weekly": "weekly",
+    "interval_monthly": "monthly",
+    "addPlan": "Add plan",
+    "subscribeHeading": "Subscribe a family",
+    "family": "Family",
+    "plan": "Plan",
+    "openCheckout": "Open payment page",
+    "checkoutNote": "Opens Stripe's hosted payment page. Card details are entered there, on Stripe's own domain — they never reach our servers. Automatic sending of this link to families comes with payment reminders.",
+    "subscriptionsHeading": "Subscriptions",
+    "noSubscriptions": "No subscription yet.",
+    "invoicesHeading": "Recent invoices",
+    "noInvoices": "No invoice yet.",
+    "mirrorNote": "Subscriptions and invoices are a mirror of Stripe, which holds the truth. Nothing here is edited by BadgeLane — it is refreshed from Stripe whenever something changes."
   }
 }

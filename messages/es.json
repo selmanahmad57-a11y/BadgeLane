@@ -261,7 +261,8 @@
     "emailInvalid": "Esa dirección de correo no parece válida.",
     "invitationRejected": "Esta dirección ya ha sido invitada o ya pertenece a la escuela.",
     "tooManyOccurrences": "Este periodo crearía {count} sesiones, por encima del límite de {limit}. Revisa sus fechas.",
-    "stripeNotConfigured": "La facturación aún no está configurada en esta instalación."
+    "stripeNotConfigured": "La facturación aún no está configurada en esta instalación.",
+    "stripeNotConnected": "Conecta primero la cuenta de Stripe de tu escuela."
   },
   "today": {
     "heading": "Hoy en la piscina",
@@ -307,6 +308,26 @@
     "chargesDisabled": "Aún no activados",
     "connect": "Conectar Stripe",
     "resume": "Terminar la configuración",
-    "merchantNote": "Tu escuela es el comercio titular: las mensualidades se abonan en tu cuenta de Stripe y BadgeLane no se queda con nada. Los datos de tarjeta nunca pasan por nuestros servidores."
+    "merchantNote": "Tu escuela es el comercio titular: las mensualidades se abonan en tu cuenta de Stripe y BadgeLane no se queda con nada. Los datos de tarjeta nunca pasan por nuestros servidores.",
+    "plansHeading": "Tarifas",
+    "noPlans": "Todavía no hay tarifas. Crea una para empezar a suscribir familias.",
+    "planName": "Nombre de la tarifa",
+    "planNamePlaceholder": "Clase semanal",
+    "amount": "Importe",
+    "amountPlaceholder": "45,00",
+    "interval": "Cobro",
+    "interval_weekly": "semanal",
+    "interval_monthly": "mensual",
+    "addPlan": "Añadir tarifa",
+    "subscribeHeading": "Suscribir a una familia",
+    "family": "Familia",
+    "plan": "Tarifa",
+    "openCheckout": "Abrir la página de pago",
+    "checkoutNote": "Abre la página de pago alojada por Stripe. Los datos de tarjeta se introducen allí, en el dominio de Stripe, y nunca llegan a nuestros servidores. El envío automático de este enlace a las familias llega con los recordatorios de pago.",
+    "subscriptionsHeading": "Suscripciones",
+    "noSubscriptions": "Todavía no hay suscripciones.",
+    "invoicesHeading": "Facturas recientes",
+    "noInvoices": "Todavía no hay facturas.",
+    "mirrorNote": "Las suscripciones y las facturas son un reflejo de Stripe, que es quien tiene la verdad. BadgeLane no modifica nada aquí: se actualiza desde Stripe cuando algo cambia."
   }
 }

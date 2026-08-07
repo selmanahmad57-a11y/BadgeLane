@@ -24,7 +24,21 @@ import { routing } from "@/i18n/routing";
  */
 const handleInternationalization = createIntlMiddleware(routing);
 
+/**
+ * Les routes d'API n'ont pas de langue.
+ *
+ * Sans cette sortie, next-intl redirigerait `/api/stripe/webhook` vers
+ * `/en/api/stripe/webhook` : Stripe recevrait une redirection au lieu d'un 200,
+ * retenterait, et finirait par désactiver l'endpoint. Le webhook aurait été
+ * cassé avant d'exister.
+ */
+const API_PREFIX = "/api/";
+
 export default clerkMiddleware(async (auth, request) => {
+  if (request.nextUrl.pathname.startsWith(API_PREFIX)) {
+    return NextResponse.next();
+  }
+
   if (isAuthenticatedPath(request.nextUrl.pathname)) {
     const { userId } = await auth();
 

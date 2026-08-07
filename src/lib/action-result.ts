@@ -57,6 +57,8 @@ export const ACTION_REASONS = [
   "tooManyOccurrences",
   /** Aucune clé Stripe sur cette instance. */
   "stripeNotConfigured",
+  /** L'école n'a pas encore connecté son compte Stripe. */
+  "stripeNotConnected",
 ] as const;
 
 export type ActionReason = (typeof ACTION_REASONS)[number];

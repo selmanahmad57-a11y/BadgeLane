@@ -36,7 +36,10 @@ import {
   skillProgress,
   staffUser,
   student,
+  invoice,
+  subscription,
   term,
+  tuitionPlan,
   type ClassOccurrence,
   type Family,
   type Guardian,
@@ -48,6 +51,7 @@ import {
   type StaffUser,
   type Student,
   type Term,
+  type TuitionPlan,
 } from "./schema";
 import { withTenant } from "./tenant";
 
@@ -927,6 +931,75 @@ export async function getPoolsideSkills(
     }
 
     return result;
+  });
+}
+
+export type BillingOverview = {
+  plans: TuitionPlan[];
+  subscriptions: {
+    id: string;
+    familyName: string;
+    planName: string | null;
+    status: string;
+    currentPeriodEnd: Date | null;
+  }[];
+  invoices: {
+    id: string;
+    familyName: string;
+    amount: number;
+    currency: string;
+    status: string;
+    paidAt: Date | null;
+  }[];
+  families: { id: string; label: string }[];
+};
+
+/** Tout ce qu'affiche l'écran Facturation : tarifs, abonnements, factures. */
+export async function getBillingOverview(
+  organizationId: string,
+): Promise<BillingOverview> {
+  return withTenant(organizationId, async (tx) => {
+    const [plans, subscriptions, invoices, families] = await Promise.all([
+      tx
+        .select()
+        .from(tuitionPlan)
+        .where(eq(tuitionPlan.organizationId, organizationId))
+        .orderBy(asc(tuitionPlan.name)),
+      tx
+        .select({
+          id: subscription.id,
+          familyName: family.primaryGuardianName,
+          planName: tuitionPlan.name,
+          status: subscription.status,
+          currentPeriodEnd: subscription.currentPeriodEnd,
+        })
+        .from(subscription)
+        .innerJoin(family, eq(family.id, subscription.familyId))
+        .leftJoin(tuitionPlan, eq(tuitionPlan.id, subscription.tuitionPlanId))
+        .where(eq(subscription.organizationId, organizationId))
+        .orderBy(asc(family.primaryGuardianName)),
+      tx
+        .select({
+          id: invoice.id,
+          familyName: family.primaryGuardianName,
+          amount: invoice.amount,
+          currency: invoice.currency,
+          status: invoice.status,
+          paidAt: invoice.paidAt,
+        })
+        .from(invoice)
+        .innerJoin(family, eq(family.id, invoice.familyId))
+        .where(eq(invoice.organizationId, organizationId))
+        .orderBy(desc(invoice.createdAt))
+        .limit(25),
+      tx
+        .select({ id: family.id, label: family.primaryGuardianName })
+        .from(family)
+        .where(eq(family.organizationId, organizationId))
+        .orderBy(asc(family.primaryGuardianName)),
+    ]);
+
+    return { plans, subscriptions, invoices, families };
   });
 }
 

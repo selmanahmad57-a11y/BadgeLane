@@ -20,8 +20,8 @@
     "signUpHeading": "Crea tu cuenta de BadgeLane"
   },
   "organization": {
-    "createHeading": "Crea tu escuela",
-    "createBody": "La escuela es tu espacio de trabajo: personal, clases, familias y facturación viven dentro de ella."
+    "createHeading": "Elige tu escuela",
+    "createBody": "Selecciona la escuela con la que trabajas, o crea una nueva. Las familias no necesitan ninguna: llegan a sus hijos a través del portal para familias."
   },
   "navigation": {
     "label": "Navegación principal",

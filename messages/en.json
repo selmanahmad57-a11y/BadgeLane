@@ -20,8 +20,8 @@
     "signUpHeading": "Create your BadgeLane account"
   },
   "organization": {
-    "createHeading": "Create your school",
-    "createBody": "A school is your workspace: staff, classes, families and billing all live inside it."
+    "createHeading": "Choose your school",
+    "createBody": "Pick the school you work with, or create a new one. Parents do not need one — you reach your children through the family portal."
   },
   "navigation": {
     "label": "Main navigation",

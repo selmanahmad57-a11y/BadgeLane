@@ -2,7 +2,11 @@ import "server-only";
 
 import type Stripe from "stripe";
 
-import { CUSTOMER_PORTAL_FEATURES } from "@/config/billing";
+import {
+  CUSTOMER_PORTAL_FEATURES,
+  PARENT_PORTAL_CONFIGURATION_MARK,
+  PARENT_PORTAL_FEATURES,
+} from "@/config/billing";
 
 import type { forConnectedAccount } from "./stripe";
 
@@ -43,6 +47,71 @@ export async function resolvePortalConfiguration(
 
   const created = await stripe.billingPortal.configurations.create(
     { features: CUSTOMER_PORTAL_FEATURES },
+    scoped,
+  );
+
+  return created.id;
+}
+
+/**
+ * La configuration du portail **parent**, garantie présente et conforme.
+ *
+ * ── Le piège qu'elle ferme : « marche sur la démo, casse pour l'école n°2 » ──
+ *
+ * Les configurations de portail sont **par compte connecté**. Une configuration
+ * posée à la main sur le compte de test n'existe chez aucune autre école. Si
+ * l'absence retombait sur `undefined`, Stripe appliquerait la configuration par
+ * défaut de l'école — annulation d'abonnement comprise — et le trou refermé en
+ * Temps 2a se rouvrirait, **en silence, pour tous les tenants sauf celui qu'on
+ * a essayé**.
+ *
+ * D'où l'échec fermé : cette fonction rend toujours un identifiant, ou elle
+ * lève. Elle ne rend jamais « débrouille-toi ».
+ *
+ * ── Ensure, et non find-or-create ───────────────────────────────────────────
+ *
+ * Trouvée, la configuration est **remise à l'état voulu** plutôt que reprise
+ * telle quelle. Le coût est nul et ça ferme un bord réel : une école qui
+ * rallumerait l'annulation sur notre configuration depuis son tableau de bord
+ * la verrait rétablie au prochain passage. C'est notre porte, marquée comme
+ * telle ; la sienne reste intacte.
+ *
+ * ── La course est inoffensive ───────────────────────────────────────────────
+ *
+ * Deux parents de la même école, aucune configuration encore : au pire deux
+ * sont créées. Toutes deux ont l'annulation désactivée — la propriété de
+ * sécurité tient quoi qu'il arrive. La lecture prend la première marquée, ce
+ * qui évite la dérive sans avoir à verrouiller quoi que ce soit.
+ */
+export async function resolveParentPortalConfiguration(
+  stripe: Stripe,
+  scoped: ReturnType<typeof forConnectedAccount>,
+): Promise<string> {
+  const existing = await stripe.billingPortal.configurations.list(
+    { limit: 100 },
+    scoped,
+  );
+
+  const ours = existing.data.find(
+    (configuration) =>
+      configuration.metadata?.[PARENT_PORTAL_CONFIGURATION_MARK] === "true",
+  );
+
+  if (ours) {
+    const repaired = await stripe.billingPortal.configurations.update(
+      ours.id,
+      { active: true, features: PARENT_PORTAL_FEATURES },
+      scoped,
+    );
+
+    return repaired.id;
+  }
+
+  const created = await stripe.billingPortal.configurations.create(
+    {
+      features: PARENT_PORTAL_FEATURES,
+      metadata: { [PARENT_PORTAL_CONFIGURATION_MARK]: "true" },
+    },
     scoped,
   );
 

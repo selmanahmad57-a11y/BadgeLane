@@ -375,6 +375,14 @@
     "status_active": "Enrolled",
     "status_waitlisted": "Waiting list",
     "status_paused": "Paused",
-    "waitlistPosition": "Waiting list · #{rank}"
+    "waitlistPosition": "Waiting list · #{rank}",
+    "billingHeading": "Invoices",
+    "billingNotConfigured": "Your school has not set up billing for your household yet. Nothing to pay here for now.",
+    "billingOutstanding": "{total} outstanding.",
+    "invoicePaid": "Paid",
+    "invoiceOpen": "Open",
+    "payInvoice": "Pay",
+    "managePayment": "Manage payment method",
+    "dueOn": "due {date}"
   }
 }

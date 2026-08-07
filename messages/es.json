@@ -375,6 +375,14 @@
     "status_active": "Inscrito",
     "status_waitlisted": "Lista de espera",
     "status_paused": "En pausa",
-    "waitlistPosition": "Lista de espera · n.º {rank}"
+    "waitlistPosition": "Lista de espera · n.º {rank}",
+    "billingHeading": "Facturas",
+    "billingNotConfigured": "Tu escuela todavía no ha configurado la facturación de tu hogar. Por ahora no hay nada que pagar aquí.",
+    "billingOutstanding": "{total} pendiente.",
+    "invoicePaid": "Pagada",
+    "invoiceOpen": "Abierta",
+    "payInvoice": "Pagar",
+    "managePayment": "Gestionar el método de pago",
+    "dueOn": "vence el {date}"
   }
 }

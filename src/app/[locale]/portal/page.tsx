@@ -6,6 +6,7 @@ import {
   getPortalChildren,
   getPortalClasses,
   getPortalEnrollments,
+  getPortalBilling,
   getPortalFamilyLabel,
   getPortalSchool,
 } from "@/db/portal-queries";
@@ -15,7 +16,7 @@ import { ActionForm } from "@/components/action-form";
 import { SELECT_CLASS } from "@/components/locale-select";
 import type { Locale } from "@/config/i18n";
 
-import { enrolChild } from "./actions";
+import { enrolChild, openParentBillingPortal } from "./actions";
 
 import { PortalShell } from "./portal-shell";
 import { FamilyPicker } from "./family-picker";
@@ -74,11 +75,12 @@ export default async function PortalPage({
   const active =
     memberships.find((entry) => entry.familyId === requested) ?? memberships[0];
 
-  const [school, children, enrollments, classes, labels] = await Promise.all([
+  const [school, children, enrollments, classes, billing, labels] = await Promise.all([
     getPortalSchool(active.organizationId, active.familyId),
     getPortalChildren(active.organizationId, active.familyId),
     getPortalEnrollments(active.organizationId, active.familyId),
     getPortalClasses(active.organizationId, active.familyId),
+    getPortalBilling(active.organizationId, active.familyId),
     /**
      * Les libellés des foyers sont lus **sous contexte**, un par un — donc à
      * travers la RLS, qui confirme au passage que chacun est bien accessible.
@@ -261,6 +263,95 @@ export default async function PortalPage({
           </CardContent>
         </Card>
       ) : null}
+      {/*
+        Factures — l'écran ne connaît QUE le miroir.
+
+        Il ne peut donc pas annoncer un paiement : seul le webhook signé fait
+        passer une facture à `paid`. Ce n'est pas de la discipline, c'est une
+        propriété de l'écran — il n'a aucune autre source à consulter.
+      */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("billingHeading")}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!billing.configured ? (
+            <p className="text-muted-foreground text-sm text-pretty">
+              {t("billingNotConfigured")}
+            </p>
+          ) : (
+            <>
+              {billing.outstanding > 0 ? (
+                <p className="text-sm">
+                  {t("billingOutstanding", {
+                    total: new Intl.NumberFormat(locale, {
+                      style: "currency",
+                      currency: (
+                        billing.invoices[0]?.currency ?? "usd"
+                      ).toUpperCase(),
+                    }).format(billing.outstanding / 100),
+                  })}
+                </p>
+              ) : null}
+
+              <ul className="flex flex-col gap-2 text-sm">
+                {billing.invoices.map((entry) => (
+                  <li
+                    key={entry.id}
+                    className="flex flex-wrap items-center justify-between gap-2"
+                  >
+                    <span>
+                      {new Intl.NumberFormat(locale, {
+                        style: "currency",
+                        currency: entry.currency.toUpperCase(),
+                      }).format(entry.amount / 100)}
+                      {entry.dueDate && !entry.paidAt ? (
+                        <span className="text-muted-foreground ms-2">
+                          {t("dueOn", {
+                            date: entry.dueDate.toISOString().slice(0, 10),
+                          })}
+                        </span>
+                      ) : null}
+                    </span>
+
+                    <span className="flex items-center gap-3">
+                      <span
+                        className={
+                          entry.paidAt
+                            ? "rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+                            : "rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300"
+                        }
+                      >
+                        {entry.paidAt ? t("invoicePaid") : t("invoiceOpen")}
+                      </span>
+
+                      {/* Le paiement se fait sur la page hébergée par Stripe. */}
+                      {!entry.paidAt && entry.hostedInvoiceUrl ? (
+                        <a
+                          href={entry.hostedInvoiceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline underline-offset-4"
+                        >
+                          {t("payInvoice")}
+                        </a>
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              <ActionForm
+                action={openParentBillingPortal.bind(null, locale as Locale)}
+                submitLabel={t("managePayment")}
+                size="sm"
+              >
+                <input type="hidden" name="familyId" value={active.familyId} />
+              </ActionForm>
+            </>
+          )}
+        </CardContent>
+      </Card>
     </PortalShell>
   );
 }

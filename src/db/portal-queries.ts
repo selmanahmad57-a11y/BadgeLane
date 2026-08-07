@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 import {
   LIVE_ENROLLMENT_STATUSES,
@@ -8,9 +8,12 @@ import {
 } from "@/config/enrollment";
 
 import { withFamily } from "./tenant";
+import { UNPAID_INVOICE_STATUSES } from "@/config/billing";
+
 import {
   enrollment,
   family,
+  invoice,
   klass,
   level,
   location,
@@ -304,5 +307,79 @@ export async function getPortalChildProgress(
     if (!owned) return [];
 
     return readStudentProgress(tx, organizationId, studentId);
+  });
+}
+
+export type PortalBilling = {
+  /** `false` quand l'école n'a pas encore mis ce foyer en facturation. */
+  configured: boolean;
+  invoices: {
+    id: string;
+    amount: number;
+    currency: string;
+    status: string;
+    dueDate: Date | null;
+    paidAt: Date | null;
+    hostedInvoiceUrl: string | null;
+  }[];
+  /** Somme des factures ouvertes, en plus petite unité monétaire. */
+  outstanding: number;
+};
+
+/**
+ * Les factures du foyer.
+ *
+ * ── Une lecture directe, et c'est délibéré ──────────────────────────────────
+ *
+ * Le total dû agrège **à l'intérieur** du foyer : un parent additionne ses
+ * propres factures, et la RLS lui donne déjà exactement celles-là. Pas de
+ * `security definer` ici — sortir la fonction lourde là où la donnée est déjà
+ * scopée ajouterait une exception inutile à la liste, et la valeur de cette
+ * liste tient à sa brièveté. Chaque exception réflexe dilue le sens de toutes
+ * les autres.
+ *
+ * La règle est « agrège **hors** du foyer », pas « agrège ». Le solde n'en sort
+ * pas.
+ *
+ * ── Une famille sans dossier de paiement est un ÉTAT ────────────────────────
+ *
+ * C'est l'école qui crée le client Stripe, en abonnant le foyer ou en lui
+ * émettant une facture. Tant qu'elle ne l'a pas fait, `stripe_customer_id` est
+ * nul — ce n'est pas une panne. Le portail **lit et paie l'existant ; il ne se
+ * provisionne jamais lui-même**. Créer le client ici en dupliquerait un que
+ * l'école créera, et le webhook ne saurait plus à quelle famille rattacher quoi.
+ */
+export async function getPortalBilling(
+  organizationId: string,
+  familyId: string,
+): Promise<PortalBilling> {
+  return withFamily(organizationId, familyId, async (tx) => {
+    const [household] = await tx
+      .select({ customerId: family.stripeCustomerId })
+      .from(family)
+      .where(eq(family.id, familyId))
+      .limit(1);
+
+    const rows = await tx
+      .select({
+        id: invoice.id,
+        amount: invoice.amount,
+        currency: invoice.currency,
+        status: invoice.status,
+        dueDate: invoice.dueDate,
+        paidAt: invoice.paidAt,
+        hostedInvoiceUrl: invoice.hostedInvoiceUrl,
+      })
+      .from(invoice)
+      .where(eq(invoice.organizationId, organizationId))
+      .orderBy(desc(invoice.createdAt));
+
+    return {
+      configured: Boolean(household?.customerId),
+      invoices: rows,
+      outstanding: rows
+        .filter((row) => UNPAID_INVOICE_STATUSES.includes(row.status))
+        .reduce((total, row) => total + row.amount, 0),
+    };
   });
 }

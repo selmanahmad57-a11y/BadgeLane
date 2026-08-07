@@ -150,6 +150,47 @@ export const CUSTOMER_PORTAL_FEATURES = {
 } as const;
 
 /**
+ * Marque de la configuration de portail **réservée aux sessions parent**.
+ *
+ * ── Pourquoi une configuration à nous, et non celle de l'école ──────────────
+ *
+ * En Semaine 9, une session de portail déléguait à la configuration par défaut
+ * du compte connecté : l'école est le marchand, ses réglages priment. C'est
+ * juste pour une session qu'**elle** ouvre.
+ *
+ * Ça ne l'est plus pour une session **parent**. Le portail hébergé propose
+ * l'annulation d'abonnement par configuration — souvent active par défaut. En
+ * Temps 2a, on a délibérément refusé au parent le pouvoir de désinscrire son
+ * enfant : libérer une place déclenche une promotion de liste d'attente que
+ * personne n'a validée. Déléguer ici rouvrirait cette porte par un autre
+ * chemin. *Un second endroit qui sait le faire est un second endroit où
+ * l'oublier* — cette fois à travers la frontière Stripe.
+ *
+ * ── Et pourquoi une marque plutôt qu'un identifiant stocké ──────────────────
+ *
+ * Les configurations de portail sont **par compte connecté**. Chaque école est
+ * un compte distinct : une configuration créée pour l'une n'existe pas chez
+ * les autres. La marque permet de la retrouver — ou de constater son absence —
+ * école par école, sans rien mémoriser de notre côté.
+ */
+export const PARENT_PORTAL_CONFIGURATION_MARK = "badgelane_parent_portal";
+
+/**
+ * Ce que le portail **parent** autorise, et refuse.
+ *
+ * `subscription_cancel` est déclaré explicitement à `false` plutôt qu'omis.
+ * L'omission suffirait à la création — Stripe désactive par défaut — mais pas à
+ * la remise en conformité d'une configuration existante : un champ absent ne
+ * corrige rien. L'écrire rend l'intention exécutable.
+ */
+export const PARENT_PORTAL_FEATURES = {
+  payment_method_update: { enabled: true },
+  invoice_history: { enabled: true },
+  subscription_cancel: { enabled: false },
+  subscription_update: { enabled: false },
+} as const;
+
+/**
  * Langue du portail : laissée à Stripe.
  *
  * Nous connaissons pourtant la langue de la famille. Mais la lui imposer

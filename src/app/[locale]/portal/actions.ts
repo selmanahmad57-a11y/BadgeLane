@@ -1,11 +1,25 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 import { routes } from "@/config/routes";
 import { hasLiveEnrollment, lockKlassAndCountSeats } from "@/db/enrollment";
-import { enrollment, family, organization, student } from "@/db/schema";
+import {
+  classOccurrence,
+  enrollment,
+  family,
+  klass,
+  makeupCredit,
+  organization,
+  student,
+  term,
+} from "@/db/schema";
+import { rosterWindowCondition } from "@/db/roster";
+import { CANCELLED_OCCURRENCE_STATUS } from "@/config/scheduling";
+import { ROSTER_EXCLUDED_STATUSES } from "@/config/enrollment";
+import { MAKEUP_OCCUPYING_STATUSES } from "@/config/makeup";
+import { isMakeupUsable } from "@/lib/makeup";
 import type { ActionResult } from "@/lib/action-result";
 import { requiredUuid, ValidationError } from "@/lib/actions";
 import { todayInTimeZone } from "@/lib/occurrences";
@@ -222,4 +236,320 @@ export async function openParentBillingPortal(
   if (destination) redirect(destination);
 
   return result;
+}
+
+/**
+ * Signale l'absence d'un enfant à une séance à venir, et crée le crédit.
+ *
+ * ── La boucle fermée : un rattrapage n'engendre pas un rattrapage ───────────
+ *
+ * Le crédit ne naît que d'une séance où l'enfant est **régulièrement inscrit**
+ * — la fenêtre de roster de la Semaine 6. Sans cette borne, une séance de
+ * rattrapage étant elle-même une occurrence future, le parent y signalerait une
+ * absence et fabriquerait un second crédit, puis un troisième. La génération
+ * est adossée à l'inscription, jamais à une réservation.
+ *
+ * ── Seulement le futur ──────────────────────────────────────────────────────
+ *
+ * Une séance passée porte peut-être déjà un relevé de présence. Y signaler une
+ * absence réécrirait l'histoire — même règle que le planning et la feuille
+ * d'appel : le passé est immuable.
+ *
+ * ── Une absence, un crédit ──────────────────────────────────────────────────
+ *
+ * L'unicité `(école, élève, séance manquée)` rend le double-tap inoffensif : le
+ * second essai tombe sur une violation de contrainte, traduite en message, au
+ * lieu de créer une seconde ligne.
+ */
+export async function reportAbsence(
+  locale: Locale,
+  formData: FormData,
+): Promise<ActionResult> {
+  const familyId = requiredUuid(formData, "familyId");
+
+  return runParentAction(
+    locale,
+    "makeup:self",
+    familyId,
+    async (context, tx) => {
+      const studentId = requiredUuid(formData, "studentId");
+      const occurrenceId = requiredUuid(formData, "occurrenceId");
+
+      const [school] = await tx
+        .select({ timezone: organization.timezone })
+        .from(organization)
+        .where(eq(organization.id, context.organizationId))
+        .limit(1);
+
+      if (!school) {
+        throw new ValidationError("École introuvable.", "notInThisSchool");
+      }
+
+      const today = todayInTimeZone(school.timezone);
+
+      const [occurrence] = await tx
+        .select({
+          id: classOccurrence.id,
+          klassId: classOccurrence.klassId,
+          date: classOccurrence.date,
+          status: classOccurrence.status,
+        })
+        .from(classOccurrence)
+        .where(eq(classOccurrence.id, occurrenceId))
+        .limit(1);
+
+      if (!occurrence || occurrence.status === CANCELLED_OCCURRENCE_STATUS) {
+        throw new ValidationError("Séance introuvable.", "notInThisSchool");
+      }
+
+      if (occurrence.date <= today) {
+        throw new ValidationError(
+          "Cette séance n'est pas à venir.",
+          "occurrencePassed",
+        );
+      }
+
+      /**
+       * L'enfant est-il **inscrit** à ce cours à cette date ? La condition est
+       * celle de la Semaine 6, réutilisée telle quelle : la recopier créerait
+       * une seconde définition du roster.
+       */
+      const [enrolled] = await tx
+        .select({ id: enrollment.id })
+        .from(enrollment)
+        .where(
+          and(
+            rosterWindowCondition(
+              context.organizationId,
+              [occurrence.klassId],
+              occurrence.date,
+            ),
+            eq(enrollment.studentId, studentId),
+          ),
+        )
+        .limit(1);
+
+      if (!enrolled) {
+        throw new ValidationError(
+          "Cet enfant n'est pas inscrit à cette séance.",
+          "notEnrolledInSession",
+        );
+      }
+
+      await tx.insert(makeupCredit).values({
+        organizationId: context.organizationId,
+        studentId,
+        missedOccurrenceId: occurrenceId,
+      });
+    },
+  ).then((result) => {
+    revalidatePath(`/[locale]${routes.portal}`, "page");
+    return result;
+  });
+}
+
+/**
+ * Réserve un crédit de rattrapage dans une autre séance.
+ *
+ * ── Quatre refus, dans cet ordre ────────────────────────────────────────────
+ *
+ * 1. **Même niveau.** Un rattrapage se place dans une séance du niveau ACTUEL
+ *    de l'enfant. Ce n'est pas une contrainte administrative : c'est de l'eau
+ *    plus profonde et un encadrement pensé pour un autre public. La règle
+ *    diffère volontairement de l'inscription, où aucun filtre n'a été posé —
+ *    là-bas, l'enfant peut n'avoir aucun niveau ; ici il en a forcément un.
+ * 2. **Pas déjà attendu.** Un enfant déjà au roster de cette séance y compterait
+ *    deux corps. Vérifié au même endroit que la capacité, pas dans un écran.
+ * 3. **Un crédit utilisable.** L'état est DÉRIVÉ — disponible, réservé, consommé
+ *    ou expiré — et l'échéance se lit vivante sur la session. Une école qui
+ *    prolonge son trimestre prolonge donc ses crédits.
+ * 4. **La place.** Sous le verrou de la SÉANCE, jamais du cours.
+ *
+ * ── Le verrou porte sur l'occurrence ────────────────────────────────────────
+ *
+ * `count_seats_taken` compte les inscrits d'un cours ; un rattrapage ajoute un
+ * corps à une seule séance. Deux réservations dans deux séances du même cours
+ * n'ont aucune raison de s'attendre.
+ */
+export async function bookMakeup(
+  locale: Locale,
+  formData: FormData,
+): Promise<ActionResult> {
+  const familyId = requiredUuid(formData, "familyId");
+
+  return runParentAction(
+    locale,
+    "makeup:self",
+    familyId,
+    async (context, tx) => {
+      const creditId = requiredUuid(formData, "creditId");
+      const occurrenceId = requiredUuid(formData, "occurrenceId");
+
+      const [school] = await tx
+        .select({ timezone: organization.timezone })
+        .from(organization)
+        .where(eq(organization.id, context.organizationId))
+        .limit(1);
+
+      if (!school) {
+        throw new ValidationError("École introuvable.", "notInThisSchool");
+      }
+
+      const today = todayInTimeZone(school.timezone);
+
+      /** Le crédit, et l'échéance LUE sur la session — jamais figée. */
+      const [credit] = await tx
+        .select({
+          id: makeupCredit.id,
+          studentId: makeupCredit.studentId,
+          status: makeupCredit.status,
+          bookedOn: classOccurrence.date,
+          bookedStatus: classOccurrence.status,
+          usableThrough: sql<string | null>`coalesce(${makeupCredit.extendedUntil}, ${term.endDate})`,
+          studentLevelId: student.currentLevelId,
+        })
+        .from(makeupCredit)
+        .innerJoin(student, eq(student.id, makeupCredit.studentId))
+        .innerJoin(
+          classOccurrence,
+          eq(classOccurrence.id, makeupCredit.missedOccurrenceId),
+        )
+        .innerJoin(klass, eq(klass.id, classOccurrence.klassId))
+        .innerJoin(term, eq(term.id, klass.termId))
+        .where(eq(makeupCredit.id, creditId))
+        .limit(1);
+
+      if (!credit) {
+        throw new ValidationError("Crédit introuvable.", "notInThisSchool");
+      }
+
+      /**
+       * L'état réservé se lit sur la séance CIBLE, pas sur la manquée. Un
+       * crédit déjà posé ailleurs n'est pas réutilisable — sauf si cette
+       * séance-là a été annulée, auquel cas la dérivation le rouvre seule.
+       */
+      const [target] = await tx
+        .select({
+          id: classOccurrence.id,
+          klassId: classOccurrence.klassId,
+          date: classOccurrence.date,
+          status: classOccurrence.status,
+          levelId: klass.levelId,
+        })
+        .from(classOccurrence)
+        .innerJoin(klass, eq(klass.id, classOccurrence.klassId))
+        .where(eq(classOccurrence.id, occurrenceId))
+        .limit(1);
+
+      if (!target || target.status === CANCELLED_OCCURRENCE_STATUS) {
+        throw new ValidationError("Séance introuvable.", "notInThisSchool");
+      }
+
+      if (target.date <= today) {
+        throw new ValidationError(
+          "Cette séance n'est pas à venir.",
+          "occurrencePassed",
+        );
+      }
+
+      if (
+        credit.studentLevelId === null ||
+        credit.studentLevelId !== target.levelId
+      ) {
+        throw new ValidationError(
+          "Cette séance n'est pas du niveau de l'enfant.",
+          "wrongLevelForMakeup",
+        );
+      }
+
+      const [alreadyThere] = await tx
+        .select({ id: enrollment.id })
+        .from(enrollment)
+        .where(
+          and(
+            rosterWindowCondition(
+              context.organizationId,
+              [target.klassId],
+              target.date,
+            ),
+            eq(enrollment.studentId, credit.studentId),
+          ),
+        )
+        .limit(1);
+
+      if (alreadyThere) {
+        throw new ValidationError(
+          "Cet enfant est déjà attendu à cette séance.",
+          "alreadyOnRoster",
+        );
+      }
+
+      const [bookedTarget] = credit.status === "booked"
+        ? await tx
+            .select({ date: classOccurrence.date, status: classOccurrence.status })
+            .from(makeupCredit)
+            .innerJoin(
+              classOccurrence,
+              eq(classOccurrence.id, makeupCredit.bookedOccurrenceId),
+            )
+            .where(eq(makeupCredit.id, creditId))
+            .limit(1)
+        : [];
+
+      const usable = isMakeupUsable({
+        status: credit.status,
+        usableThrough: credit.usableThrough,
+        bookedOn: bookedTarget?.date ?? null,
+        bookedOccurrenceStatus: bookedTarget?.status ?? null,
+        today,
+      });
+
+      if (!usable) {
+        throw new ValidationError(
+          "Ce crédit n'est pas utilisable.",
+          "noUsableCredit",
+        );
+      }
+
+      /** Verrouille la SÉANCE : à partir d'ici le décompte ne bouge plus. */
+      await tx.execute(
+        sql`select 1 from ${classOccurrence}
+            where ${classOccurrence.id} = ${occurrenceId} for update`,
+      );
+
+      const attending = Number(
+        (
+          await tx.execute(
+            sql`select count_occurrence_attendees(
+                  ${occurrenceId}::uuid,
+                  ${sql.param([...ROSTER_EXCLUDED_STATUSES])}::text[],
+                  ${sql.param([...MAKEUP_OCCUPYING_STATUSES])}::text[]
+                ) as total`,
+          )
+        ).rows[0].total,
+      );
+
+      const [capacity] = await tx
+        .select({ seats: klass.capacity })
+        .from(klass)
+        .where(eq(klass.id, target.klassId))
+        .limit(1);
+
+      if (attending >= (capacity?.seats ?? 0)) {
+        throw new ValidationError("Cette séance est complète.", "classFull", {
+          taken: attending,
+          capacity: capacity?.seats ?? 0,
+        });
+      }
+
+      await tx
+        .update(makeupCredit)
+        .set({ bookedOccurrenceId: occurrenceId, status: "booked" })
+        .where(eq(makeupCredit.id, creditId));
+    },
+  ).then((result) => {
+    revalidatePath(`/[locale]${routes.portal}`, "page");
+    revalidatePath(`/[locale]${routes.today}`, "page");
+    return result;
+  });
 }

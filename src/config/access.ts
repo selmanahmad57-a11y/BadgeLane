@@ -55,7 +55,7 @@ export const FAMILY_CONTEXT_SETTING = "app.current_family_id";
  * et c'est l'écran « nouvelles inscriptions » qui rend ce droit exerçable.
  * Un nom qui promet une approbation inexistante finirait par la faire croire.
  */
-export const PARENT_CAPABILITIES = ["enrollment:self"] as const;
+export const PARENT_CAPABILITIES = ["enrollment:self", "makeup:self"] as const;
 
 export type ParentCapability = (typeof PARENT_CAPABILITIES)[number];
 

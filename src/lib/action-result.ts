@@ -77,6 +77,16 @@ export const ACTION_REASONS = [
    * lui ouvrir une page sans rien dedans.
    */
   "familyNotBilledYet",
+  /** La séance visée n'est pas à venir : le passé ne se réécrit pas. */
+  "occurrencePassed",
+  /** L'enfant n'est pas inscrit à cette séance — un rattrapage n'en engendre pas. */
+  "notEnrolledInSession",
+  /** Le rattrapage viserait un niveau qui n'est pas celui de l'enfant. */
+  "wrongLevelForMakeup",
+  /** L'enfant est déjà attendu à cette séance. */
+  "alreadyOnRoster",
+  /** Aucun crédit utilisable — consommé, expiré, ou déjà réservé. */
+  "noUsableCredit",
 ] as const;
 
 export type ActionReason = (typeof ACTION_REASONS)[number];

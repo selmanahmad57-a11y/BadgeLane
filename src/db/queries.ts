@@ -36,6 +36,7 @@ import {
   klass,
   level,
   location,
+  makeupCredit,
   program,
   skill,
   skillProgress,
@@ -667,6 +668,13 @@ export type AttendanceRosterEntry = {
   studentName: string;
   medicalNotes: string | null;
   status: AttendanceStatus | null;
+  /**
+   * L'enfant vient rattraper une séance manquée ailleurs.
+   *
+   * Le coach doit le savoir — il ne le connaît pas, l'enfant n'est pas de ce
+   * cours — mais l'appel se fait exactement pareil : il est là, on le coche.
+   */
+  isMakeup: boolean;
 };
 
 export type CoachSession = {
@@ -735,7 +743,7 @@ export async function getSessionsForDate(
     const klassIds = sessions.map((entry) => entry.klassId);
     const occurrenceIds = sessions.map((entry) => entry.occurrenceId);
 
-    const [enrolled, marked] = await Promise.all([
+    const [enrolled, makeups, marked] = await Promise.all([
       tx
         .select({
           klassId: enrollment.klassId,
@@ -748,6 +756,35 @@ export async function getSessionsForDate(
         .innerJoin(student, eq(student.id, enrollment.studentId))
         /** Condition extraite dans `roster.ts` pour être éprouvée telle quelle. */
         .where(rosterWindowCondition(organizationId, klassIds, date))
+        .orderBy(asc(student.firstName), asc(student.lastName)),
+      /**
+       * Les rattrapages réservés sur ces séances.
+       *
+       * C'est ici que le fil de la Semaine 6 se referme : un crédit réservé
+       * n'est pas qu'une ligne en base, c'est un enfant que le coach voit
+       * arriver au bord du bassin, à la bonne date. Sans cette jointure, il
+       * serait présent physiquement et absent de la feuille.
+       *
+       * Un crédit dont la séance a été annulée n'y figure pas : la séance
+       * elle-même a disparu du planning du jour.
+       */
+      tx
+        .select({
+          occurrenceId: makeupCredit.bookedOccurrenceId,
+          studentId: student.id,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          medicalNotes: student.medicalNotes,
+        })
+        .from(makeupCredit)
+        .innerJoin(student, eq(student.id, makeupCredit.studentId))
+        .where(
+          and(
+            eq(makeupCredit.organizationId, organizationId),
+            inArray(makeupCredit.bookedOccurrenceId, occurrenceIds),
+            eq(makeupCredit.status, "booked"),
+          ),
+        )
         .orderBy(asc(student.firstName), asc(student.lastName)),
       tx
         .select({
@@ -770,15 +807,28 @@ export async function getSessionsForDate(
 
     return sessions.map((session) => ({
       ...session,
-      roster: enrolled
-        .filter((row) => row.klassId === session.klassId)
-        .map((row) => ({
-          studentId: row.studentId,
-          studentName: `${row.firstName} ${row.lastName}`,
-          medicalNotes: row.medicalNotes,
-          status:
-            markedByKey.get(`${session.occurrenceId}:${row.studentId}`) ?? null,
-        })),
+      roster: [
+        ...enrolled
+          .filter((row) => row.klassId === session.klassId)
+          .map((row) => ({
+            studentId: row.studentId,
+            studentName: `${row.firstName} ${row.lastName}`,
+            medicalNotes: row.medicalNotes,
+            status:
+              markedByKey.get(`${session.occurrenceId}:${row.studentId}`) ?? null,
+            isMakeup: false,
+          })),
+        ...makeups
+          .filter((row) => row.occurrenceId === session.occurrenceId)
+          .map((row) => ({
+            studentId: row.studentId,
+            studentName: `${row.firstName} ${row.lastName}`,
+            medicalNotes: row.medicalNotes,
+            status:
+              markedByKey.get(`${session.occurrenceId}:${row.studentId}`) ?? null,
+            isMakeup: true,
+          })),
+      ],
     }));
   });
 }

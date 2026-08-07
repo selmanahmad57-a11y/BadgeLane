@@ -394,7 +394,93 @@ async function main(): Promise<number> {
       `${brutal}`,
     );
 
+    // ── Les deux vues doivent être d'accord ───────────────────────────────
+    //
+    // La progression d'un enfant est DÉRIVÉE : compétences du niveau au
+    // dénominateur, marques acquises au numérateur. Une dérivation ne dépend
+    // pas de qui regarde. Si le parent et le personnel voient des totaux
+    // différents pour le même enfant, l'un des deux ment — et rien dans
+    // l'interface ne dit lequel.
+    //
+    // Ce contrôle aurait attrapé le bug du portail : il compare les deux
+    // lectures au lieu de vérifier chacune dans son coin.
+
+    console.log("\nParent et personnel voient la même progression");
+
+    /** Exactement le calcul de `readStudentProgress`, réduit à ses totaux. */
+    async function progressSeenFor(studentId: string) {
+      const { rows } = await client.query(
+        `select l.id as level_id,
+                (select count(*)::int from skill where level_id = l.id) as total,
+                (select count(*)::int from skill_progress sp
+                   join skill s on s.id = sp.skill_id
+                  where s.level_id = l.id
+                    and sp.student_id = $1
+                    and sp.status = 'achieved') as achieved
+           from level l
+          where l.organization_id = $2
+          order by l.sort_order`,
+        [studentId, organizationId],
+      );
+
+      return rows as { level_id: string; total: number; achieved: number }[];
+    }
+
+    const ownStudent = students.find((row) => row.family_id === mine)!;
+
+    await asStaff(client, organizationId);
+    const seenByStaff = await progressSeenFor(ownStudent.id);
+
+    await asParent(client, organizationId, mine);
+    const seenByParent = await progressSeenFor(ownStudent.id);
+
+    check(
+      "les deux voient le même nombre de niveaux",
+      seenByStaff.length === seenByParent.length,
+      `personnel ${seenByStaff.length}, parent ${seenByParent.length}`,
+    );
+
+    /**
+     * Le dénominateur vient de `skill`, jamais de `skill_progress` : un niveau
+     * dont l'élève n'a encore rien acquis vaut « 0 sur N », pas « 0 sur 0 ».
+     * Le compter depuis les marques ferait disparaître le niveau à mesure qu'il
+     * est vide — et un enfant qui commence n'aurait aucun objectif affiché.
+     */
+    check(
+      "aucun niveau n'a un dénominateur nul côté personnel",
+      seenByStaff.every((row) => row.total > 0),
+      seenByStaff.map((row) => row.total).join(", "),
+    );
+
+    const divergent = seenByParent.filter((parentRow, index) => {
+      const staffRow = seenByStaff[index];
+      return (
+        !staffRow ||
+        staffRow.level_id !== parentRow.level_id ||
+        Number(staffRow.total) !== Number(parentRow.total) ||
+        Number(staffRow.achieved) !== Number(parentRow.achieved)
+      );
+    });
+
+    check(
+      "niveau par niveau, les totaux sont identiques",
+      divergent.length === 0,
+      divergent
+        .map((row) => `${row.level_id}: parent ${row.achieved}/${row.total}`)
+        .join(" · "),
+    );
+
+    /** Contrôle du contrôle : sans données, l'égalité serait vide de sens. */
+    check(
+      "et il y avait bien quelque chose à comparer",
+      seenByParent.some((row) => Number(row.achieved) > 0),
+      seenByParent.map((row) => `${row.achieved}/${row.total}`).join(", "),
+    );
+
     // ── 4. La plomberie ───────────────────────────────────────────────────
+
+    await asParent(client, organizationId, mine);
+
 
     console.log("\nLa plomberie, invisible au parent");
 

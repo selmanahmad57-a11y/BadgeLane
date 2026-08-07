@@ -1,6 +1,6 @@
 import { neonConfig, Pool } from "@neondatabase/serverless";
 import { config as loadEnvFile } from "dotenv";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import ws from "ws";
 
@@ -17,6 +17,7 @@ import {
   organization,
   program,
   skill,
+  skillProgress,
   student,
   term,
 } from "../src/db/schema";
@@ -582,6 +583,7 @@ async function seedOrganization(
 
     let createdStudents = 0;
     let restoredLevel = false;
+    let awardedSkills = 0;
 
     for (const [index, entry] of DEMO.students.entries()) {
       let record = knownStudents.get(entry.firstName);
@@ -613,6 +615,86 @@ async function seedOrganization(
           .where(eq(student.id, record.id));
         restoredLevel = true;
       }
+
+      /**
+       * Le premier élève a AUSSI ses compétences de niveau validées.
+       *
+       * Sans cela, le mur de badges du portail parent est techniquement
+       * correct et visuellement vide : un niveau à 0/2, aucun badge acquis.
+       * Or c'est exactement ce que la démonstration doit montrer — la chaîne
+       * complète, du coach qui coche au bord du bassin jusqu'au parent qui voit
+       * le badge. Une démonstration qui n'expose pas la fonctionnalité
+       * différenciante ne démontre rien.
+       *
+       * `coach_id` reste nul : personne n'a réellement coché. Inventer un
+       * auteur ferait mentir la traçabilité.
+       */
+      if (index === 0 && firstLevel && record) {
+        const levelSkills = await tx
+          .select({ id: skill.id })
+          .from(skill)
+          .where(
+            and(
+              eq(skill.organizationId, organizationId),
+              eq(skill.levelId, firstLevel.id),
+            ),
+          );
+
+        if (levelSkills.length > 0) {
+          await tx
+            .insert(skillProgress)
+            .values(
+              levelSkills.map((entry) => ({
+                organizationId,
+                studentId: record.id,
+                skillId: entry.id,
+                status: "achieved" as const,
+                achievedAt: new Date(),
+              })),
+            )
+            /**
+             * Réconcilier, et non ignorer.
+             *
+             * `onConflictDoNothing` laissait en place une compétence restée
+             * « en cours » — celle qu'on avait manipulée depuis l'écran coach —
+             * et le badge ne s'acquérait jamais. Même intention que la
+             * réaffectation du niveau juste au-dessus : un jeu de démonstration
+             * qu'on relance doit **rétablir** l'état voulu, pas s'abstenir.
+             *
+             * `achieved_at` n'est posée que si elle manquait : réécrire la date
+             * d'acquisition à chaque exécution ferait mentir l'historique.
+             */
+            .onConflictDoUpdate({
+              target: [
+                skillProgress.organizationId,
+                skillProgress.studentId,
+                skillProgress.skillId,
+              ],
+              set: {
+                status: "achieved",
+                achievedAt: sql`coalesce(${skillProgress.achievedAt}, now())`,
+              },
+            });
+
+          /**
+           * Le compte est **relu**, jamais déduit de ce qu'on vient d'écrire.
+           * Annoncer un résultat qu'on n'a pas vérifié est la faute que ce
+           * script a déjà commise deux fois.
+           */
+          const [confirmed] = await tx
+            .select({ total: count() })
+            .from(skillProgress)
+            .where(
+              and(
+                eq(skillProgress.organizationId, organizationId),
+                eq(skillProgress.studentId, record.id),
+                eq(skillProgress.status, "achieved"),
+              ),
+            );
+
+          awardedSkills = confirmed?.total ?? 0;
+        }
+      }
     }
 
     console.log(
@@ -621,6 +703,9 @@ async function seedOrganization(
         `  1 famille   ${DEMO.family.primaryGuardianName}`,
         `  2 tuteurs   ${DEMO.guardians.map((g) => g.name).join(", ")}`,
         `  élèves      ${createdStudents} créé(s), ${DEMO.students.length - createdStudents} déjà présent(s)`,
+        awardedSkills > 0
+          ? `  badges      ${awardedSkills} compétence(s) acquise(s) par le premier élève — son badge de niveau est visible au portail`
+          : "  badges      aucune compétence acquise : le mur de badges sera vide",
         firstLevel
           ? restoredLevel
             ? `  niveau      « ${firstLevel.name} » (r\u00e9)affect\u00e9 au premier \u00e9l\u00e8ve`

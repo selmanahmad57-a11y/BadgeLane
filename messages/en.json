@@ -305,9 +305,6 @@
     "chargesLabel": "Payments",
     "chargesEnabled": "Enabled",
     "chargesDisabled": "Not yet enabled",
-    "payoutsLabel": "Payouts",
-    "payoutsEnabled": "Enabled",
-    "payoutsDisabled": "Not yet enabled",
     "connect": "Connect Stripe",
     "resume": "Finish setting up",
     "merchantNote": "Your school is the merchant of record: tuition is paid to your Stripe account, and BadgeLane takes no cut of it. Card details never touch our servers."

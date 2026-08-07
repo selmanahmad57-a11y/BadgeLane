@@ -305,9 +305,6 @@
     "chargesLabel": "Pagos",
     "chargesEnabled": "Activados",
     "chargesDisabled": "Aún no activados",
-    "payoutsLabel": "Transferencias",
-    "payoutsEnabled": "Activadas",
-    "payoutsDisabled": "Aún no activadas",
     "connect": "Conectar Stripe",
     "resume": "Terminar la configuración",
     "merchantNote": "Tu escuela es el comercio titular: las mensualidades se abonan en tu cuenta de Stripe y BadgeLane no se queda con nada. Los datos de tarjeta nunca pasan por nuestros servidores."

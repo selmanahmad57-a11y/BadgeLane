@@ -10,7 +10,7 @@ import { organization } from "@/db/schema";
 import { withTenant } from "@/db/tenant";
 import type { ActionResult } from "@/lib/action-result";
 import { runAuthorizedAction, ValidationError } from "@/lib/actions";
-import { getStripe } from "@/lib/stripe";
+import { connectedAccountConfiguration, getStripe } from "@/lib/stripe";
 
 /**
  * Connexion du compte Stripe de l'école, en Connect **Standard**.
@@ -57,9 +57,8 @@ export async function startStripeOnboarding(): Promise<ActionResult> {
       /** Compte déjà créé : on reprend l'onboarding là où il s'est arrêté. */
       if (record.stripeAccountId) return record.stripeAccountId;
 
-      const account = await stripe.accounts.create({
-        type: "standard",
-        country: record.country,
+      const account = await stripe.v2.core.accounts.create({
+        ...connectedAccountConfiguration(record.country),
         /**
          * L'identifiant de l'école voyage dans les métadonnées : les
          * événements de webhook le rapporteront, ce qui évite une résolution
@@ -78,12 +77,17 @@ export async function startStripeOnboarding(): Promise<ActionResult> {
 
     const returnUrl = `${clientEnv.NEXT_PUBLIC_APP_URL}/${clientEnv.NEXT_PUBLIC_DEFAULT_LOCALE}${routes.billing}`;
 
-    const link = await stripe.accountLinks.create({
+    const link = await stripe.v2.core.accountLinks.create({
       account: accountId,
-      /** Reprise si l'école abandonne en cours de route. */
-      refresh_url: returnUrl,
-      return_url: returnUrl,
-      type: "account_onboarding",
+      use_case: {
+        type: "account_onboarding",
+        account_onboarding: {
+          configurations: ["merchant"],
+          return_url: returnUrl,
+          /** Reprise si l'école abandonne en cours de route. */
+          refresh_url: returnUrl,
+        },
+      },
     });
 
     destination = link.url;

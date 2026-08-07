@@ -37,10 +37,20 @@ export default async function BillingPage({ params }: BillingPageProps) {
   const stripe = getStripe();
   const account =
     stripe && accountId
-      ? await stripe.accounts.retrieve(accountId).catch(() => null)
+      ? await stripe.v2.core.accounts
+          .retrieve(accountId, {
+            include: ["configuration.merchant", "requirements"],
+          })
+          .catch(() => null)
       : null;
 
-  const ready = Boolean(account?.charges_enabled);
+  /**
+   * En v2, « peut encaisser » se lit dans les capacités de la configuration
+   * marchande, et non dans un booléen `charges_enabled`. Une capacité absente
+   * n'est pas active : l'onboarding n'est pas terminé.
+   */
+  const capabilities = account?.configuration?.merchant?.capabilities;
+  const ready = capabilities?.card_payments?.status === "active";
   const started = Boolean(accountId);
 
   return (
@@ -80,12 +90,6 @@ export default async function BillingPage({ params }: BillingPageProps) {
                 <dd className="font-mono text-xs">{accountId}</dd>
                 <dt className="text-muted-foreground">{t("chargesLabel")}</dt>
                 <dd>{ready ? t("chargesEnabled") : t("chargesDisabled")}</dd>
-                <dt className="text-muted-foreground">{t("payoutsLabel")}</dt>
-                <dd>
-                  {account?.payouts_enabled
-                    ? t("payoutsEnabled")
-                    : t("payoutsDisabled")}
-                </dd>
               </dl>
             ) : null}
 

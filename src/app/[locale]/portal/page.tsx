@@ -4,11 +4,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { portalStudentPath } from "@/config/routes";
 import {
   getPortalChildren,
+  getPortalClasses,
+  getPortalEnrollments,
   getPortalFamilyLabel,
   getPortalSchool,
 } from "@/db/portal-queries";
 import { Link } from "@/i18n/navigation";
 import { requireParentMemberships } from "@/lib/parent-auth";
+import { ActionForm } from "@/components/action-form";
+import { SELECT_CLASS } from "@/components/locale-select";
+import type { Locale } from "@/config/i18n";
+
+import { enrolChild } from "./actions";
 
 import { PortalShell } from "./portal-shell";
 import { FamilyPicker } from "./family-picker";
@@ -67,9 +74,11 @@ export default async function PortalPage({
   const active =
     memberships.find((entry) => entry.familyId === requested) ?? memberships[0];
 
-  const [school, children, labels] = await Promise.all([
+  const [school, children, enrollments, classes, labels] = await Promise.all([
     getPortalSchool(active.organizationId, active.familyId),
     getPortalChildren(active.organizationId, active.familyId),
+    getPortalEnrollments(active.organizationId, active.familyId),
+    getPortalClasses(active.organizationId, active.familyId),
     /**
      * Les libellés des foyers sont lus **sous contexte**, un par un — donc à
      * travers la RLS, qui confirme au passage que chacun est bien accessible.
@@ -141,6 +150,115 @@ export default async function PortalPage({
           ))}
         </ul>
       )}
+
+      {/*
+        « Mes inscriptions » — les deux états côte à côte.
+
+        `active` et `waitlisted` ne sont pas deux degrés de réussite : le second
+        est un résultat normal d'un cours plein, et le dire ainsi évite qu'un
+        parent croie que sa demande a échoué.
+      */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("enrollmentsHeading")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {enrollments.length === 0 ? (
+            <p className="text-muted-foreground text-sm text-pretty">
+              {t("noEnrollments")}
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-3 text-sm">
+              {enrollments.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="flex flex-wrap items-center justify-between gap-2"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    {entry.levelColor ? (
+                      <span
+                        aria-hidden
+                        className="inline-block size-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: entry.levelColor }}
+                      />
+                    ) : null}
+                    <span className="truncate">
+                      <span className="font-medium">
+                        {entry.studentFirstName}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {" · "}
+                        {entry.klassTitle}
+                      </span>
+                    </span>
+                  </span>
+
+                  <span
+                    className={
+                      entry.status === "active"
+                        ? "rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+                        : "rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300"
+                    }
+                  >
+                    {t(`status_${entry.status}`)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      {children.length > 0 && classes.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("enrolHeading")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <ActionForm
+              action={enrolChild.bind(null, locale as Locale)}
+              submitLabel={t("enrol")}
+              size="sm"
+            >
+              <input type="hidden" name="familyId" value={active.familyId} />
+
+              <select
+                name="studentId"
+                aria-label={t("child")}
+                className={SELECT_CLASS}
+              >
+                {children.map((child) => (
+                  <option key={child.id} value={child.id}>
+                    {child.firstName}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                name="klassId"
+                aria-label={t("klass")}
+                className={SELECT_CLASS}
+              >
+                {classes.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.title} — {t("seatsLeft", {
+                      left: Math.max(entry.capacity - entry.taken, 0),
+                    })}
+                  </option>
+                ))}
+              </select>
+            </ActionForm>
+
+            {/*
+              Le nombre affiché informe, le verrou décide. Le dire ici évite
+              qu'un parent prenne une place en liste d'attente pour une panne.
+            */}
+            <p className="text-muted-foreground text-sm text-pretty">
+              {t("enrolNote")}
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
     </PortalShell>
   );
 }

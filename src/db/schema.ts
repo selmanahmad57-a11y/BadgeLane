@@ -647,6 +647,30 @@ export const enrollment = pgTable(
     /** Fin effective, posée à la clôture. */
     endDate: date("end_date"),
 
+    /**
+     * Le tuteur qui s'est inscrit lui-même. `null` = geste du personnel.
+     *
+     * ── Pourquoi cette colonne existe, alors qu'on ne matérialise rien ───────
+     *
+     * C'est une **provenance**, pas un état dérivable. Passé l'instant de
+     * l'écriture, plus rien ne permet de savoir si une inscription vient du
+     * bureau de l'école ou du canapé d'un parent : on la garde, ou on la perd.
+     *
+     * ── Ce qu'elle porte ────────────────────────────────────────────────────
+     *
+     * Tout le contrepoids du choix « `active` direct ». L'école n'approuve pas
+     * en amont, elle **relit en aval** — et sans savoir lesquelles viennent des
+     * familles, sa relecture serait noyée dans ses propres saisies. Le droit de
+     * retrait deviendrait une promesse que l'écran ne tient pas.
+     *
+     * `set null` à la suppression : perdre le tuteur ne doit pas emporter
+     * l'inscription de l'enfant.
+     */
+    enrolledByGuardianId: uuid("enrolled_by_guardian_id").references(
+      () => guardian.id,
+      { onDelete: "set null" },
+    ),
+
     ...timestamps,
   },
   (table) => [

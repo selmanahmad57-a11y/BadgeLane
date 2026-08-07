@@ -37,6 +37,37 @@
 export const FAMILY_CONTEXT_SETTING = "app.current_family_id";
 
 /**
+ * Ce qu'un parent a le droit de faire lui-même.
+ *
+ * ── Un jeu séparé, pas une ligne de plus dans la matrice du personnel ────────
+ *
+ * `CAPABILITIES_BY_ROLE` décrit ce que fait un membre de l'école. Un parent
+ * n'en est pas un moins doté : c'est un autre sujet. Les deux univers de types
+ * ne se rencontrent jamais, donc aucun contrôle ne peut accorder par accident
+ * une capacité de personnel à un parent — ni l'inverse.
+ *
+ * ── Le nom compte ────────────────────────────────────────────────────────────
+ *
+ * `enrollment:self` — « s'inscrire soi-même ». Le premier nom envisagé était
+ * `enrollment:request`, et il mentait : rien n'est *demandé*. Sur une place
+ * libre, l'enfant est inscrit immédiatement ; sur un cours plein, il entre en
+ * liste d'attente. L'école n'approuve pas en amont, elle **retire en aval** —
+ * et c'est l'écran « nouvelles inscriptions » qui rend ce droit exerçable.
+ * Un nom qui promet une approbation inexistante finirait par la faire croire.
+ */
+export const PARENT_CAPABILITIES = ["enrollment:self"] as const;
+
+export type ParentCapability = (typeof PARENT_CAPABILITIES)[number];
+
+/**
+ * Fenêtre pendant laquelle une inscription est « nouvelle » pour l'école.
+ *
+ * Ce n'est pas un réglage d'affichage : c'est la durée pendant laquelle le
+ * droit de retrait de l'école reste facile à exercer.
+ */
+export const NEW_ENROLLMENT_WINDOW_DAYS = 14;
+
+/**
  * Fonction d'amorçage du portail parent : la seule lecture qui échappe à la RLS.
  *
  * Le portail doit découvrir de quelle école et de quelle famille il s'agit à

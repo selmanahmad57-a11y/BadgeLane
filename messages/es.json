@@ -356,6 +356,17 @@
     "noChildrenHeading": "Todavía no hay ningún hijo en esta ficha",
     "noChildrenBody": "Tu escuela aún no ha añadido ningún nadador a tu hogar. Ponte en contacto con ella y aparecerán aquí.",
     "noFamilyHeading": "Ninguna familia vinculada a esta dirección",
-    "noFamilyBody": "Te vinculamos con tus hijos a través de la dirección de correo que tu escuela tiene registrada, una vez que esa dirección está verificada. Comprueba que has iniciado sesión con la dirección que tiene tu escuela y que la has confirmado."
+    "noFamilyBody": "Te vinculamos con tus hijos a través de la dirección de correo que tu escuela tiene registrada, una vez que esa dirección está verificada. Comprueba que has iniciado sesión con la dirección que tiene tu escuela y que la has confirmado.",
+    "enrollmentsHeading": "Mis inscripciones",
+    "noEnrollments": "Todavía sin clases. Elige una abajo y tu hijo queda inscrito.",
+    "enrolHeading": "Apuntarse a una clase",
+    "enrol": "Inscribir",
+    "child": "Hijo o hija",
+    "klass": "Clase",
+    "seatsLeft": "{left, plural, =0 {completa — lista de espera} one {# plaza libre} other {# plazas libres}}",
+    "enrolNote": "Las plazas mostradas son orientativas. Si la clase se llena antes de que pulses, tu hijo pasa a la lista de espera en lugar de recibir un error: nunca se mete a nadie a la fuerza en una piscina llena.",
+    "status_active": "Inscrito",
+    "status_waitlisted": "Lista de espera",
+    "status_paused": "En pausa"
   }
 }

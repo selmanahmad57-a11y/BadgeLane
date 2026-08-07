@@ -1,9 +1,23 @@
 import "server-only";
 
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
+
+import {
+  LIVE_ENROLLMENT_STATUSES,
+  SEAT_TAKING_STATUSES,
+} from "@/config/enrollment";
 
 import { withFamily } from "./tenant";
-import { family, level, organization, program, student } from "./schema";
+import {
+  enrollment,
+  family,
+  klass,
+  level,
+  location,
+  organization,
+  program,
+  student,
+} from "./schema";
 import { readStudentProgress, type StudentLevelProgress } from "./queries";
 
 /**
@@ -42,6 +56,133 @@ export type PortalSchool = {
   name: string;
   timezone: string;
 };
+
+export type PortalClass = {
+  id: string;
+  title: string;
+  levelName: string | null;
+  levelColor: string | null;
+  locationName: string | null;
+  dayOfWeek: number;
+  startTime: string;
+  durationMin: number;
+  capacity: number;
+  taken: number;
+};
+
+export type PortalEnrollment = {
+  id: string;
+  studentId: string;
+  studentFirstName: string;
+  klassTitle: string;
+  levelName: string | null;
+  levelColor: string | null;
+  dayOfWeek: number;
+  startTime: string;
+  status: string;
+};
+
+/**
+ * Les cours de l'école, avec leur occupation.
+ *
+ * ── Le décompte ne peut pas être une lecture directe ────────────────────────
+ *
+ * `enrollment` est restreinte aux enfants du foyer : compter ses lignes
+ * donnerait « 0 occupée » sur chaque cours. Le nombre passe donc par
+ * `count_seats_taken`, qui échappe à la RLS **en réimposant la frontière
+ * d'école** et qui lève plutôt que de rendre un zéro trompeur.
+ *
+ * Ce nombre est **indicatif**. Il peut être périmé au moment où le parent
+ * clique, et ce n'est pas un défaut : le verrou pris à l'inscription décide
+ * seul. Une classe qui se remplit entre l'affichage et le clic fait atterrir
+ * l'enfant en liste d'attente — pas en erreur.
+ */
+export async function getPortalClasses(
+  organizationId: string,
+  familyId: string,
+): Promise<PortalClass[]> {
+  return withFamily(organizationId, familyId, async (tx) => {
+    const rows = await tx
+      .select({
+        id: klass.id,
+        title: klass.title,
+        levelName: level.name,
+        levelColor: level.color,
+        locationName: location.name,
+        dayOfWeek: klass.dayOfWeek,
+        startTime: klass.startTime,
+        durationMin: klass.durationMin,
+        capacity: klass.capacity,
+      })
+      .from(klass)
+      .leftJoin(level, eq(level.id, klass.levelId))
+      .leftJoin(location, eq(location.id, klass.locationId))
+      .where(and(eq(klass.organizationId, organizationId), eq(klass.active, true)))
+      .orderBy(asc(klass.dayOfWeek), asc(klass.startTime));
+
+    return Promise.all(
+      rows.map(async (row) => {
+        const counted = await tx.execute(
+          sql`select count_seats_taken(${row.id}::uuid, ${sql.param([
+            ...SEAT_TAKING_STATUSES,
+          ])}::text[]) as total`,
+        );
+
+        return {
+          ...row,
+          taken: Number(
+            (counted.rows[0] as { total: number | string }).total ?? 0,
+          ),
+        };
+      }),
+    );
+  });
+}
+
+/**
+ * Les inscriptions du foyer, tous enfants confondus.
+ *
+ * ── Pourquoi aucun rang de liste d'attente n'est affiché ────────────────────
+ *
+ * Le rang se dérive de **toutes** les inscriptions en attente du cours, classées
+ * par `waitlisted_at`. Sous contexte famille, le parent ne voit que les
+ * siennes : le calcul rendrait « 1 » à tout le monde, en permanence.
+ *
+ * C'est exactement le piège du décompte des places, une seconde fois. Il se
+ * fermerait de la même façon — une fonction `security definer` qui réimpose la
+ * frontière d'école. Tant qu'elle n'existe pas, on n'affiche pas de position :
+ * un nombre silencieusement toujours faux est pire que pas de nombre.
+ */
+export async function getPortalEnrollments(
+  organizationId: string,
+  familyId: string,
+): Promise<PortalEnrollment[]> {
+  return withFamily(organizationId, familyId, async (tx) =>
+    tx
+      .select({
+        id: enrollment.id,
+        studentId: student.id,
+        studentFirstName: student.firstName,
+        klassTitle: klass.title,
+        levelName: level.name,
+        levelColor: level.color,
+        dayOfWeek: klass.dayOfWeek,
+        startTime: klass.startTime,
+        status: enrollment.status,
+      })
+      .from(enrollment)
+      .innerJoin(student, eq(student.id, enrollment.studentId))
+      .innerJoin(klass, eq(klass.id, enrollment.klassId))
+      .leftJoin(level, eq(level.id, klass.levelId))
+      .where(
+        and(
+          eq(enrollment.organizationId, organizationId),
+          inArray(enrollment.status, [...LIVE_ENROLLMENT_STATUSES]),
+        ),
+      )
+      .orderBy(asc(student.firstName), asc(klass.dayOfWeek)),
+  );
+}
 
 /**
  * L'école, réduite à ce que le portail affiche.

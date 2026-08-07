@@ -262,7 +262,10 @@
     "invitationRejected": "Esta dirección ya ha sido invitada o ya pertenece a la escuela.",
     "tooManyOccurrences": "Este periodo crearía {count} sesiones, por encima del límite de {limit}. Revisa sus fechas.",
     "stripeNotConfigured": "La facturación aún no está configurada en esta instalación.",
-    "stripeNotConnected": "Conecta primero la cuenta de Stripe de tu escuela."
+    "stripeNotConnected": "Conecta primero la cuenta de Stripe de tu escuela.",
+    "planIsOneOff": "Esta tarifa se cobra por trimestre, así que no se puede suscribir. Emite una factura en su lugar.",
+    "planIsRecurring": "Esta tarifa es una suscripción, así que no se puede emitir como factura única. Suscribe a la familia en su lugar.",
+    "familyHasNoEmail": "Stripe no tiene ninguna dirección de correo de esta familia, así que no puede enviarle la factura. Añade una en la ficha de la familia."
   },
   "today": {
     "heading": "Hoy en la piscina",
@@ -328,6 +331,12 @@
     "noSubscriptions": "Todavía no hay suscripciones.",
     "invoicesHeading": "Facturas recientes",
     "noInvoices": "Todavía no hay facturas.",
-    "mirrorNote": "Las suscripciones y las facturas son un reflejo de Stripe, que es quien tiene la verdad. BadgeLane no modifica nada aquí: se actualiza desde Stripe cuando algo cambia."
+    "mirrorNote": "Las suscripciones y las facturas son un reflejo de Stripe, que es quien tiene la verdad. BadgeLane no modifica nada aquí: se actualiza desde Stripe cuando algo cambia.",
+    "interval_term": "por trimestre",
+    "issueInvoiceHeading": "Emitir una factura por trimestre",
+    "issueInvoice": "Emitir factura",
+    "issueInvoiceNote": "Crea una factura única de Stripe con vencimiento en {days} días y su propia página de pago. A diferencia de una suscripción, nunca se renueva, así que no hay ninguna fecha de fin que recordar.",
+    "paymentLink": "Enlace de pago",
+    "dueOn": "vence el {date}"
   }
 }

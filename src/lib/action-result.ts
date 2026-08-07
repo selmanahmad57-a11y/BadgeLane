@@ -59,6 +59,18 @@ export const ACTION_REASONS = [
   "stripeNotConfigured",
   /** L'école n'a pas encore connecté son compte Stripe. */
   "stripeNotConnected",
+  /**
+   * Les deux sens d'une même confusion : un tarif au trimestre se facture à
+   * l'unité et ne peut pas être abonné ; un tarif hebdomadaire ou mensuel est
+   * un abonnement et ne s'émet pas en facture ponctuelle.
+   *
+   * Deux motifs plutôt qu'un seul « mauvais tarif » : celui qui se trompe doit
+   * lire ce qu'il faut faire, pas seulement qu'il s'est trompé.
+   */
+  "planIsOneOff",
+  "planIsRecurring",
+  /** La famille n'a pas d'adresse e-mail : Stripe ne peut pas lui écrire. */
+  "familyHasNoEmail",
 ] as const;
 
 export type ActionReason = (typeof ACTION_REASONS)[number];

@@ -131,7 +131,7 @@ vide affichant le nom de l'école, ton rôle, son fuseau et sa devise.
 | `npm run authz:verify` | Chaque rôle n'ouvre qu'un cran, contrôle négatif à l'appui |
 | `npm run attendance:verify` | Relevés de présence et remplacement du plus récent |
 | `npm run badges:verify` | Dérivation des badges quand le curriculum évolue |
-| `npm run billing:verify` | Doublon d'événement Stripe, et vue échappant à la RLS |
+| `npm run billing:verify` | Doublon d'événement Stripe, séparation abonnement / facture, vue hors RLS |
 
 ---
 

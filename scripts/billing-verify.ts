@@ -5,6 +5,12 @@ import { config as loadEnvFile } from "dotenv";
 import ws from "ws";
 
 import {
+  isRecurringInterval,
+  STRIPE_RECURRING_INTERVAL,
+  TERM_INVOICE_DAYS_UNTIL_DUE,
+  TUITION_INTERVALS,
+} from "../src/config/billing";
+import {
   TENANT_CONTEXT_SETTING,
   UNIQUE_VIOLATION_SQLSTATE,
 } from "../src/config/database";
@@ -82,6 +88,37 @@ async function main(): Promise<number> {
   const db = drizzle(pool);
 
   try {
+    console.log("\nAbonnement et facture ponctuelle ne se confondent pas");
+
+    /**
+     * Si `term` rejoignait un jour `STRIPE_RECURRING_INTERVAL`, le code créerait
+     * un abonnement trimestriel là où l'école attend un paiement unique — et il
+     * se reconduirait chaque trimestre, sans que personne l'ait demandé, jusqu'à
+     * ce qu'un parent s'en aperçoive sur son relevé. Rien dans l'interface ne le
+     * montrerait. D'où ce contrôle.
+     */
+    for (const interval of TUITION_INTERVALS) {
+      const recurring = isRecurringInterval(interval);
+      check(
+        `« ${interval} » : ${recurring ? "abonnement" : "facture ponctuelle"}`,
+        recurring === (interval !== "term"),
+      );
+    }
+
+    check(
+      "aucun intervalle récurrent ne se réclame de « term »",
+      !Object.keys(STRIPE_RECURRING_INTERVAL).includes("term"),
+      Object.keys(STRIPE_RECURRING_INTERVAL).join(", "),
+    );
+
+    /** Le délai de paiement doit rester une durée utilisable par Stripe. */
+    check(
+      "le délai de paiement d'une facture est un entier positif",
+      Number.isInteger(TERM_INVOICE_DAYS_UNTIL_DUE) &&
+        TERM_INVOICE_DAYS_UNTIL_DUE > 0,
+      String(TERM_INVOICE_DAYS_UNTIL_DUE),
+    );
+
     console.log("\nReconnaissance du doublon d'événement");
 
     /**

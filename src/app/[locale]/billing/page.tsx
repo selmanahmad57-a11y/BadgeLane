@@ -9,13 +9,18 @@ import { requireOrganizationSession } from "@/lib/auth";
 import { getStripe } from "@/lib/stripe";
 import { SELECT_CLASS } from "@/components/locale-select";
 import { Input } from "@/components/ui/input";
-import { TUITION_INTERVALS } from "@/config/billing";
+import {
+  isRecurringInterval,
+  TERM_INVOICE_DAYS_UNTIL_DUE,
+  TUITION_INTERVALS,
+} from "@/config/billing";
 import { FIELD_LIMITS } from "@/config/validation";
 import { getBillingOverview } from "@/db/queries";
 
 import {
   createCheckoutLink,
   createTuitionPlan,
+  issueTermInvoice,
   startStripeOnboarding,
 } from "./actions";
 
@@ -76,6 +81,15 @@ export default async function BillingPage({ params }: BillingPageProps) {
     style: "currency",
     currency: session.organization.currency,
   });
+
+  /**
+   * Les deux familles de tarifs, séparées une fois pour toutes : l'abonnement
+   * et la facture ponctuelle n'ouvrent pas le même formulaire.
+   */
+  const recurringPlans =
+    overview?.plans.filter((plan) => isRecurringInterval(plan.interval)) ?? [];
+  const oneOffPlans =
+    overview?.plans.filter((plan) => !isRecurringInterval(plan.interval)) ?? [];
 
   return (
     <ConsoleShell title={t("heading")} description={t("intro")}>
@@ -191,7 +205,14 @@ export default async function BillingPage({ params }: BillingPageProps) {
             </CardContent>
           </Card>
 
-          {canManage && overview.plans.length > 0 && overview.families.length > 0 ? (
+          {/*
+            Deux formulaires plutôt qu'un seul avec une liste mêlée : abonner une
+            famille et lui émettre une facture au trimestre ne produisent pas le
+            même objet chez Stripe. Ne proposer que les tarifs valides pour
+            chaque geste évite d'avoir à refuser après coup — l'action refuse
+            quand même, car rien n'empêche de soumettre l'autre à la main.
+          */}
+          {canManage && recurringPlans.length > 0 && overview.families.length > 0 ? (
             <Card>
               <CardHeader>
                 <CardTitle>{t("subscribeHeading")}</CardTitle>
@@ -206,7 +227,7 @@ export default async function BillingPage({ params }: BillingPageProps) {
                     ))}
                   </select>
                   <select name="planId" aria-label={t("plan")} className={SELECT_CLASS}>
-                    {overview.plans.map((plan) => (
+                    {recurringPlans.map((plan) => (
                       <option key={plan.id} value={plan.id}>
                         {plan.name} — {money.format(plan.amount / 100)}
                       </option>
@@ -215,6 +236,35 @@ export default async function BillingPage({ params }: BillingPageProps) {
                 </ActionForm>
                 <p className="text-muted-foreground text-sm text-pretty">
                   {t("checkoutNote")}
+                </p>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {canManage && oneOffPlans.length > 0 && overview.families.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("issueInvoiceHeading")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <ActionForm action={issueTermInvoice} submitLabel={t("issueInvoice")} size="sm">
+                  <select name="familyId" aria-label={t("family")} className={SELECT_CLASS}>
+                    {overview.families.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select name="planId" aria-label={t("plan")} className={SELECT_CLASS}>
+                    {oneOffPlans.map((plan) => (
+                      <option key={plan.id} value={plan.id}>
+                        {plan.name} — {money.format(plan.amount / 100)}
+                      </option>
+                    ))}
+                  </select>
+                </ActionForm>
+                <p className="text-muted-foreground text-sm text-pretty">
+                  {t("issueInvoiceNote", { days: TERM_INVOICE_DAYS_UNTIL_DUE })}
                 </p>
               </CardContent>
             </Card>
@@ -273,13 +323,39 @@ export default async function BillingPage({ params }: BillingPageProps) {
                       key={entry.id}
                       className="flex flex-wrap items-center justify-between gap-2"
                     >
-                      <span>{entry.familyName}</span>
-                      <span className="text-muted-foreground">
-                        {new Intl.NumberFormat(locale, {
-                          style: "currency",
-                          currency: entry.currency.toUpperCase(),
-                        }).format(entry.amount / 100)}{" "}
-                        · {entry.status}
+                      <span>
+                        {entry.familyName}
+                        {entry.dueDate && !entry.paidAt ? (
+                          <span className="text-muted-foreground ms-2">
+                            {t("dueOn", {
+                              date: entry.dueDate.toISOString().slice(0, 10),
+                            })}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="text-muted-foreground flex items-center gap-3">
+                        <span>
+                          {new Intl.NumberFormat(locale, {
+                            style: "currency",
+                            currency: entry.currency.toUpperCase(),
+                          }).format(entry.amount / 100)}{" "}
+                          · {entry.status}
+                        </span>
+                        {/*
+                          Le lien de paiement est celui que Stripe a émis, pas
+                          une adresse reconstruite : c'est lui qu'on enverra au
+                          parent quand les relances arriveront.
+                        */}
+                        {entry.hostedInvoiceUrl && !entry.paidAt ? (
+                          <a
+                            href={entry.hostedInvoiceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-foreground underline underline-offset-4"
+                          >
+                            {t("paymentLink")}
+                          </a>
+                        ) : null}
                       </span>
                     </li>
                   ))}

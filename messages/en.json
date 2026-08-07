@@ -262,7 +262,10 @@
     "invitationRejected": "This address has already been invited, or already belongs to the school.",
     "tooManyOccurrences": "This term would create {count} sessions, above the limit of {limit}. Check its dates.",
     "stripeNotConfigured": "Billing is not set up on this installation yet.",
-    "stripeNotConnected": "Connect your school's Stripe account first."
+    "stripeNotConnected": "Connect your school's Stripe account first.",
+    "planIsOneOff": "This rate is billed per term, so it cannot be subscribed to. Issue an invoice for it instead.",
+    "planIsRecurring": "This rate is a subscription, so it cannot be issued as a one-off invoice. Subscribe the family instead.",
+    "familyHasNoEmail": "Stripe has no email address for this family, so it cannot send them the invoice. Add one on the family record."
   },
   "today": {
     "heading": "Today at the pool",
@@ -328,6 +331,12 @@
     "noSubscriptions": "No subscription yet.",
     "invoicesHeading": "Recent invoices",
     "noInvoices": "No invoice yet.",
-    "mirrorNote": "Subscriptions and invoices are a mirror of Stripe, which holds the truth. Nothing here is edited by BadgeLane — it is refreshed from Stripe whenever something changes."
+    "mirrorNote": "Subscriptions and invoices are a mirror of Stripe, which holds the truth. Nothing here is edited by BadgeLane — it is refreshed from Stripe whenever something changes.",
+    "interval_term": "per term",
+    "issueInvoiceHeading": "Issue a term invoice",
+    "issueInvoice": "Issue invoice",
+    "issueInvoiceNote": "Creates a one-off Stripe invoice due in {days} days, with its own payment page. Unlike a subscription it never renews, so there is no end date to remember.",
+    "paymentLink": "Payment link",
+    "dueOn": "due {date}"
   }
 }

@@ -804,6 +804,18 @@ export const invoice = pgTable(
     dueDate: timestamp("due_date", { withTimezone: true }),
     paidAt: timestamp("paid_at", { withTimezone: true }),
 
+    /**
+     * Page de paiement hébergée par Stripe, telle qu'il l'a émise.
+     *
+     * C'est l'adresse qu'on transmet au parent — le futur *text-to-pay*. Elle
+     * est **recopiée**, jamais fabriquée : construire une URL Stripe à partir
+     * d'un identifiant reviendrait à parier sur la forme de leurs adresses.
+     *
+     * Nulle tant que la facture est un brouillon : Stripe ne la produit qu'à la
+     * finalisation.
+     */
+    hostedInvoiceUrl: text("hosted_invoice_url"),
+
     ...timestamps,
   },
   (table) => [

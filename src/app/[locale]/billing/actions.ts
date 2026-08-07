@@ -4,12 +4,17 @@ import { and, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import { STRIPE_RECURRING_INTERVAL, TUITION_INTERVALS } from "@/config/billing";
+import {
+  isRecurringInterval,
+  STRIPE_RECURRING_INTERVAL,
+  TERM_INVOICE_DAYS_UNTIL_DUE,
+  TUITION_INTERVALS,
+} from "@/config/billing";
 import { clientEnv } from "@/config/env.client";
 import { isStripeConfigured } from "@/config/env.stripe";
 import { routes } from "@/config/routes";
 import { family, organization, tuitionPlan } from "@/db/schema";
-import { withTenant } from "@/db/tenant";
+import { withTenant, type TenantTransaction } from "@/db/tenant";
 import type { ActionResult } from "@/lib/action-result";
 import {
   requiredEnum,
@@ -116,6 +121,122 @@ export async function startStripeOnboarding(): Promise<ActionResult> {
   return result;
 }
 
+// ─── Briques communes aux deux chemins de paiement ───────────────────────────
+
+/**
+ * Le tarif, vérifié comme appartenant à cette école.
+ *
+ * La contrainte de clé étrangère ne suffirait pas : elle accepterait le tarif
+ * d'une école concurrente, dont l'identifiant aurait été soumis à la main.
+ */
+async function requirePlan(
+  tx: TenantTransaction,
+  organizationId: string,
+  planId: string,
+) {
+  const [plan] = await tx
+    .select({
+      stripePriceId: tuitionPlan.stripePriceId,
+      interval: tuitionPlan.interval,
+      name: tuitionPlan.name,
+    })
+    .from(tuitionPlan)
+    .where(
+      and(
+        eq(tuitionPlan.id, planId),
+        eq(tuitionPlan.organizationId, organizationId),
+      ),
+    )
+    .limit(1);
+
+  if (!plan?.stripePriceId) {
+    throw new ValidationError("Tarif introuvable.", "notInThisSchool");
+  }
+
+  return { ...plan, stripePriceId: plan.stripePriceId };
+}
+
+/**
+ * Le client Stripe de la famille, créé au besoin puis mémorisé.
+ *
+ * Cette mémorisation n'est pas un cache : c'est elle qui permet au webhook de
+ * retrouver la famille à partir du client. Sans elle, chaque paiement créerait
+ * un doublon chez Stripe et le miroir n'aurait plus à quoi se rattacher.
+ *
+ * Écrit une seule fois plutôt que dans chaque flux : abonnement et facture
+ * ponctuelle doivent aboutir au **même** client, sans quoi une famille se
+ * retrouverait avec deux dossiers de paiement chez son école.
+ */
+async function ensureCustomer(
+  tx: TenantTransaction,
+  scoped: ReturnType<typeof forConnectedAccount>,
+  organizationId: string,
+  familyId: string,
+): Promise<string> {
+  const stripe = getStripe();
+  if (!stripe) {
+    throw new ValidationError("Stripe non configuré.", "stripeNotConfigured");
+  }
+
+  const [household] = await tx
+    .select({
+      email: family.email,
+      name: family.primaryGuardianName,
+      customerId: family.stripeCustomerId,
+    })
+    .from(family)
+    .where(
+      and(eq(family.id, familyId), eq(family.organizationId, organizationId)),
+    )
+    .limit(1);
+
+  if (!household) {
+    throw new ValidationError("Famille introuvable.", "notInThisSchool");
+  }
+
+  if (household.customerId) return household.customerId;
+
+  const customer = await stripe.customers.create(
+    {
+      email: household.email,
+      name: household.name,
+      metadata: { familyId, organizationId },
+    },
+    scoped,
+  );
+
+  await tx
+    .update(family)
+    .set({ stripeCustomerId: customer.id })
+    .where(eq(family.id, familyId));
+
+  return customer.id;
+}
+
+/** Le compte connecté de l'école, sans lequel aucun encaissement n'est possible. */
+async function requireConnectedAccount(
+  tx: TenantTransaction,
+  organizationId: string,
+) {
+  const [record] = await tx
+    .select({
+      stripeAccountId: organization.stripeAccountId,
+      currency: organization.currency,
+    })
+    .from(organization)
+    .where(eq(organization.id, organizationId))
+    .limit(1);
+
+  if (!record?.stripeAccountId) {
+    throw new ValidationError(
+      "L'école n'a pas encore connecté son compte Stripe.",
+      "stripeNotConnected",
+    );
+  }
+
+  return { ...record, stripeAccountId: record.stripeAccountId };
+}
+
 // ─── Plans tarifaires ────────────────────────────────────────────────────────
 
 /**
@@ -170,11 +291,18 @@ export async function createTuitionPlan(
         );
       }
 
+      /**
+       * Un prix récurrent produit un abonnement ; un prix sans `recurring`
+       * produit un paiement unique. C'est la seule différence entre les deux
+       * chemins, et elle se joue ici.
+       */
       const price = await stripe.prices.create(
         {
           currency: record.currency.toLowerCase(),
           unit_amount: amount,
-          recurring: { interval: STRIPE_RECURRING_INTERVAL[interval] },
+          ...(isRecurringInterval(interval)
+            ? { recurring: { interval: STRIPE_RECURRING_INTERVAL[interval] } }
+            : {}),
           product_data: { name },
           metadata: { organizationId: context.organizationId },
         },
@@ -224,82 +352,29 @@ export async function createCheckoutLink(
     const planId = requiredUuid(formData, "planId");
 
     await withTenant(context.organizationId, async (tx) => {
-      const [record] = await tx
-        .select({
-          stripeAccountId: organization.stripeAccountId,
-          currency: organization.currency,
-        })
-        .from(organization)
-        .where(eq(organization.id, context.organizationId))
-        .limit(1);
+      const account = await requireConnectedAccount(tx, context.organizationId);
+      const scoped = forConnectedAccount(account.stripeAccountId);
 
-      if (!record?.stripeAccountId) {
-        throw new ValidationError(
-          "L'école n'a pas encore connecté son compte Stripe.",
-          "stripeNotConnected",
-        );
-      }
-
-      const scoped = forConnectedAccount(record.stripeAccountId);
-
-      const [plan] = await tx
-        .select({ priceId: tuitionPlan.stripePriceId })
-        .from(tuitionPlan)
-        .where(
-          and(
-            eq(tuitionPlan.id, planId),
-            eq(tuitionPlan.organizationId, context.organizationId),
-          ),
-        )
-        .limit(1);
-
-      if (!plan?.priceId) {
-        throw new ValidationError("Tarif introuvable.", "notInThisSchool");
-      }
-
-      const [household] = await tx
-        .select({
-          email: family.email,
-          name: family.primaryGuardianName,
-          customerId: family.stripeCustomerId,
-        })
-        .from(family)
-        .where(
-          and(
-            eq(family.id, familyId),
-            eq(family.organizationId, context.organizationId),
-          ),
-        )
-        .limit(1);
-
-      if (!household) {
-        throw new ValidationError("Famille introuvable.", "notInThisSchool");
-      }
+      const plan = await requirePlan(tx, context.organizationId, planId);
 
       /**
-       * Le client Stripe est créé sur le compte de l'école, puis mémorisé. Sans
-       * cette mémorisation, chaque paiement créerait un doublon et le webhook ne
-       * saurait plus à quelle famille rattacher l'abonnement.
+       * Un tarif au trimestre n'a pas de prix récurrent : Stripe refuserait la
+       * session d'abonnement. On refuse d'abord, avec un message qui dit quoi
+       * faire à la place.
        */
-      let customerId = household.customerId;
-
-      if (!customerId) {
-        const customer = await stripe.customers.create(
-          {
-            email: household.email,
-            name: household.name,
-            metadata: { familyId, organizationId: context.organizationId },
-          },
-          scoped,
+      if (!isRecurringInterval(plan.interval)) {
+        throw new ValidationError(
+          "Ce tarif se facture à l'unité.",
+          "planIsOneOff",
         );
-
-        customerId = customer.id;
-
-        await tx
-          .update(family)
-          .set({ stripeCustomerId: customerId })
-          .where(eq(family.id, familyId));
       }
+
+      const customerId = await ensureCustomer(
+        tx,
+        scoped,
+        context.organizationId,
+        familyId,
+      );
 
       const returnUrl = `${clientEnv.NEXT_PUBLIC_APP_URL}/${clientEnv.NEXT_PUBLIC_DEFAULT_LOCALE}${routes.billing}`;
 
@@ -307,7 +382,7 @@ export async function createCheckoutLink(
         {
           mode: "subscription",
           customer: customerId,
-          line_items: [{ price: plan.priceId, quantity: 1 }],
+          line_items: [{ price: plan.stripePriceId, quantity: 1 }],
           success_url: returnUrl,
           cancel_url: returnUrl,
           metadata: { familyId, organizationId: context.organizationId },
@@ -332,4 +407,123 @@ export async function createCheckoutLink(
   if (destination) redirect(destination);
 
   return result;
+}
+
+/**
+ * Émet une facture au trimestre — un paiement unique, payé d'avance.
+ *
+ * ── Pourquoi une *Invoice* et non un abonnement ──────────────────────────────
+ *
+ * Un abonnement trimestriel se reconduirait. Il faudrait alors le résilier au
+ * bon moment pour qu'il s'arrête après une saison — une échéance à tenir, donc
+ * une échéance à rater. La facture ponctuelle n'a pas cette dette : émise une
+ * fois, payée une fois, terminée.
+ *
+ * ── `send_invoice` plutôt que `charge_automatically` ─────────────────────────
+ *
+ * L'école n'a pas la carte du parent : c'est justement la famille qu'on veut
+ * faire payer, à partir d'un lien. Stripe produit alors une page de paiement
+ * hébergée et une échéance — celle-là même sur laquelle s'appuieront les
+ * relances de la Semaine 9.
+ *
+ * ── Ce qui n'est PAS écrit ici ───────────────────────────────────────────────
+ *
+ * Aucune ligne dans la table `invoice`. Le miroir est écrit par le webhook, à
+ * la réception de `invoice.created` puis `invoice.finalized`, à partir de
+ * l'objet relu chez Stripe. Écrire aussi depuis ici créerait une seconde source
+ * de vérité — et deux vérités finissent toujours par diverger.
+ */
+export async function issueTermInvoice(
+  formData: FormData,
+): Promise<ActionResult> {
+  return runAuthorizedAction("billing:manage", async (context) => {
+    const stripe = getStripe();
+    if (!stripe) {
+      throw new ValidationError("Stripe non configuré.", "stripeNotConfigured");
+    }
+
+    const familyId = requiredUuid(formData, "familyId");
+    const planId = requiredUuid(formData, "planId");
+
+    await withTenant(context.organizationId, async (tx) => {
+      const account = await requireConnectedAccount(tx, context.organizationId);
+      const scoped = forConnectedAccount(account.stripeAccountId);
+
+      const plan = await requirePlan(tx, context.organizationId, planId);
+
+      if (isRecurringInterval(plan.interval)) {
+        throw new ValidationError(
+          "Ce tarif est un abonnement.",
+          "planIsRecurring",
+        );
+      }
+
+      const customerId = await ensureCustomer(
+        tx,
+        scoped,
+        context.organizationId,
+        familyId,
+      );
+
+      /**
+       * Stripe ne peut pas envoyer une facture à un client sans adresse. La
+       * famille en a forcément une — le champ est requis depuis la Semaine 3 —
+       * mais un client créé avant, ou modifié dans leur tableau de bord,
+       * pourrait ne pas en avoir. On le vérifie plutôt que de le supposer.
+       */
+      const customer = await stripe.customers.retrieve(customerId, {}, scoped);
+      if (customer.deleted || !customer.email) {
+        throw new ValidationError(
+          "Cette famille n'a pas d'adresse e-mail chez Stripe.",
+          "familyHasNoEmail",
+        );
+      }
+
+      /**
+       * L'ordre compte. La facture est créée **vide** — `exclude` empêche
+       * d'aspirer d'éventuelles lignes en attente sur ce client, qui
+       * appartiendraient à une autre facturation. La ligne est ensuite
+       * rattachée explicitement à celle-ci.
+       */
+      const draft = await stripe.invoices.create(
+        {
+          customer: customerId,
+          collection_method: "send_invoice",
+          days_until_due: TERM_INVOICE_DAYS_UNTIL_DUE,
+          pending_invoice_items_behavior: "exclude",
+          description: plan.name,
+          metadata: {
+            familyId,
+            organizationId: context.organizationId,
+            tuitionPlanId: planId,
+          },
+        },
+        scoped,
+      );
+
+      await stripe.invoiceItems.create(
+        {
+          customer: customerId,
+          invoice: draft.id,
+          /**
+           * `pricing.price` et non `price` : la version courante de l'API a
+           * imbriqué le champ. Écrit à plat, il serait silencieusement ignoré
+           * et la facture partirait à zéro.
+           */
+          pricing: { price: plan.stripePriceId },
+          quantity: 1,
+        },
+        scoped,
+      );
+
+      /**
+       * La finalisation est ce qui rend la facture payable : c'est elle qui
+       * produit l'échéance et la page de paiement hébergée. Un brouillon ne
+       * déclencherait ni relance ni paiement.
+       */
+      await stripe.invoices.finalizeInvoice(draft.id!, {}, scoped);
+    });
+
+    revalidatePath(`/[locale]${routes.billing}`, "page");
+  });
 }

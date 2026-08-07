@@ -128,6 +128,7 @@ export async function mirrorInvoice(
       paidAt: remote.status_transitions?.paid_at
         ? new Date(remote.status_transitions.paid_at * 1000)
         : null,
+      hostedInvoiceUrl: remote.hosted_invoice_url ?? null,
     })
     .onConflictDoUpdate({
       target: [invoice.organizationId, invoice.stripeInvoiceId],
@@ -139,6 +140,7 @@ export async function mirrorInvoice(
         paidAt: remote.status_transitions?.paid_at
           ? new Date(remote.status_transitions.paid_at * 1000)
           : null,
+        hostedInvoiceUrl: remote.hosted_invoice_url ?? null,
       },
     });
 }

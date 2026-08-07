@@ -113,6 +113,20 @@
       "when": 1786066085476,
       "tag": "0015_stripe_account_lookup",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786111929968,
+      "tag": "0016_tuition_interval_term",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786112252413,
+      "tag": "0017_invoice_hosted_url",
+      "breakpoints": true
     }
   ]
 }

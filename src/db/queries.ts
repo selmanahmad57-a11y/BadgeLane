@@ -949,7 +949,10 @@ export type BillingOverview = {
     amount: number;
     currency: string;
     status: string;
+    dueDate: Date | null;
     paidAt: Date | null;
+    /** Page de paiement Stripe : c'est le lien qu'on transmet à la famille. */
+    hostedInvoiceUrl: string | null;
   }[];
   families: { id: string; label: string }[];
 };
@@ -985,7 +988,9 @@ export async function getBillingOverview(
           amount: invoice.amount,
           currency: invoice.currency,
           status: invoice.status,
+          dueDate: invoice.dueDate,
           paidAt: invoice.paidAt,
+          hostedInvoiceUrl: invoice.hostedInvoiceUrl,
         })
         .from(invoice)
         .innerJoin(family, eq(family.id, invoice.familyId))

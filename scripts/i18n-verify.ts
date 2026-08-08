@@ -144,6 +144,15 @@ const SOURCE_ROOT = "src";
  * silence : un contrôle qui ignore ce qu'il ne sait pas faire donne une
  * confiance qu'il ne mérite pas.
  */
+/**
+ * Ce qui ressemble à un appel de traduction, quelle qu'en soit la provenance.
+ *
+ * Volontairement plus large que la détection d'espace de noms : c'est ce
+ * décalage qui permet de repérer les fichiers qu'on ne sait PAS classer,
+ * au lieu de les rater.
+ */
+const TRANSLATION_CALL = /\bt\(\s*["`]/;
+
 function checkUsedKeys(reference: Set<string>): {
   problems: string[];
   checked: number;
@@ -175,7 +184,38 @@ function checkUsedKeys(reference: Set<string>): {
       ),
     ].flatMap((match) => [match[1], match[2]].filter(Boolean) as string[]);
 
-    if (namespaces.length === 0) continue;
+    /**
+     * ── LE POINT AVEUGLE, ET SA PARADE ──────────────────────────────────────
+     *
+     * Cette ligne disait autrefois « pas d'espace de noms reconnu → passer au
+     * fichier suivant ». C'est ainsi que `compose.ts` — toute la surface des
+     * e-mails — est resté hors du champ : le balayage ne connaissait que
+     * `getTranslations` et `useTranslations`, et un fichier qui n'en avait
+     * aucun était ignoré EN ENTIER.
+     *
+     * Le vert ne voulait alors pas dire « tout est couvert » mais « tout ce que
+     * j'ai regardé passe ». Le compteur de couverture lui-même mentait.
+     *
+     * Un balayage bâti sur une liste blanche de motifs est aveugle par
+     * construction à toute surface neuve. La parade n'est donc pas d'allonger
+     * la liste — ce serait réparer l'instance — mais de rendre la couverture
+     * consciente d'elle-même : un fichier qui appelle visiblement des
+     * traductions sans qu'on sache les rattacher **fait échouer le contrôle**.
+     *
+     * Ignorer en silence ce qu'on ne sait pas classer, c'est promettre une
+     * couverture qu'on n'a pas.
+     */
+    if (namespaces.length === 0) {
+      const looksTranslated = TRANSLATION_CALL.test(source);
+
+      if (looksTranslated) {
+        problems.push(
+          `${file.replace(/\\/g, "/")} : appelle des traductions, mais aucun espace de noms n'a pu être rattaché. Le balayage ne sait pas classer ce fichier — il ne peut donc pas garantir que ses clés existent. Déclare l'espace de noms par getTranslations/useTranslations/createTranslator, ou étends ce contrôle.`,
+        );
+      }
+
+      continue;
+    }
 
     /** Un fichier à plusieurs espaces de noms rend l'attribution ambiguë. */
     const unique = [...new Set(namespaces)];

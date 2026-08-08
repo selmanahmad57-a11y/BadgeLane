@@ -52,3 +52,33 @@ export async function composePaymentConfirmation(
     body: t("paymentConfirmationBody", values),
   };
 }
+
+/**
+ * Le rapport de progression mensuel — l'autre surface de composition.
+ *
+ * Écrite ici, et non dans son propre module, pour une raison de couverture :
+ * le balayage de `i18n:verify` rattache les clés à l'espace de noms déclaré
+ * dans le **fichier**. Une seconde composition ailleurs devrait redéclarer le
+ * sien — et si elle l'oubliait, le contrôle échouerait désormais au lieu de
+ * l'ignorer.
+ */
+export async function composeMonthlyProgress(
+  locale: Locale,
+  values: {
+    guardian: string;
+    child: string;
+    school: string;
+    achievements: string;
+  },
+): Promise<ComposedEmail> {
+  const t = createTranslator({
+    locale,
+    messages: await catalogFor(locale),
+    namespace: "email",
+  }) as unknown as (key: string, values?: Record<string, string>) => string;
+
+  return {
+    subject: t("monthlyProgressSubject", values),
+    body: t("monthlyProgressBody", values),
+  };
+}

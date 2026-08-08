@@ -403,6 +403,8 @@
   },
   "email": {
     "paymentConfirmationSubject": "{school} — payment received",
-    "paymentConfirmationBody": "Hello {guardian},\n\nWe have received your payment of {amount} for {school}.\n\nYou can see your invoices any time in the family portal.\n\nThis message was sent once your bank confirmed the payment — never because a page was reloaded.\n\n— {school}"
+    "paymentConfirmationBody": "Hello {guardian},\n\nWe have received your payment of {amount} for {school}.\n\nYou can see your invoices any time in the family portal.\n\nThis message was sent once your bank confirmed the payment — never because a page was reloaded.\n\n— {school}",
+    "monthlyProgressSubject": "{child}'s progress at {school}",
+    "monthlyProgressBody": "Hello {guardian},\n\nHere is what {child} worked on this month at {school}:\n\n{achievements}\n\nSee the full badge wall in the family portal.\n\n— {school}"
   }
 }

@@ -22,6 +22,7 @@ import { STAFF_ROLES } from "@/config/roles";
 import { ATTENDANCE_STATUSES } from "@/config/attendance";
 import { TUITION_INTERVALS } from "@/config/billing";
 import { ENROLLMENT_STATUSES } from "@/config/enrollment";
+import { EMAIL_DELIVERY_STATUSES, EMAIL_KINDS } from "@/config/email";
 import { MAKEUP_CREDIT_STATUSES } from "@/config/makeup";
 import { PROGRESS_STATUSES } from "@/config/progress";
 import { OCCURRENCE_STATUSES } from "@/config/scheduling";
@@ -1070,6 +1071,88 @@ export const makeupCredit = pgTable(
     index("makeup_credit_organization_id_idx").on(table.organizationId),
     index("makeup_credit_booked_occurrence_idx").on(table.bookedOccurrenceId),
     studentScopedPolicy("makeup_credit"),
+  ],
+);
+
+export const emailKindEnum = pgEnum("email_kind", EMAIL_KINDS);
+export const emailDeliveryStatusEnum = pgEnum(
+  "email_delivery_status",
+  EMAIL_DELIVERY_STATUSES,
+);
+
+/**
+ * Registre des e-mails sortants — le `stripe_event` de l'envoi.
+ *
+ * ── Ce que la contrainte ferme, et ce qu'elle ne peut pas fermer ────────────
+ *
+ * L'unicité `(école, nature, sujet, période)` rend impossible de **tenter**
+ * deux fois le même envoi : un déclenchement concurrent tombe sur une violation
+ * de contrainte, pas sur un second courriel.
+ *
+ * Mais elle ne ferme pas tout, et c'est le point subtil. Le motif du webhook —
+ * « insérer et écrire le miroir dans une seule transaction » — ne se transpose
+ * PAS ici, parce qu'un côté est un appel HTTP que Postgres ne peut pas
+ * atomiser. Si l'envoi réussit et que le processus meurt avant le `commit`, la
+ * ligne est annulée et l'e-mail est parti quand même : le passage suivant le
+ * renverrait.
+ *
+ * D'où la séquence, et l'ordre porte la garantie :
+ *
+ *   1. réclamer la ligne, et **valider** — la contrainte arrête les doublons
+ *      concurrents ;
+ *   2. envoyer **hors transaction**, en passant cette même clé au fournisseur
+ *      comme clé d'idempotence — c'est là que se ferme l'unique fenêtre que la
+ *      base ne peut pas fermer ;
+ *   3. marquer le résultat.
+ *
+ * Deux mécanismes, parce qu'un côté est externe. Bonus : un envoi en masse
+ * devient reprenable — un plantage à la cinquantième famille reprend à la
+ * cinquante-et-unième.
+ *
+ * Aucune politique de famille : c'est de la plomberie d'école, invisible au
+ * parent, au même titre que `stripe_event`.
+ */
+export const outboundEmail = pgTable(
+  "outbound_email",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+
+    kind: emailKindEnum("kind").notNull(),
+
+    /** Ce dont l'e-mail parle : une facture, une famille. */
+    subjectId: uuid("subject_id").notNull(),
+
+    /**
+     * La période couverte, pour un envoi récurrent — « 2026-10 ».
+     *
+     * Chaîne vide pour un transactionnel plutôt que `null` : une contrainte
+     * d'unicité ignore les `null`, et deux confirmations de paiement pour la
+     * même facture passeraient toutes les deux.
+     */
+    period: text("period").notNull().default(""),
+
+    status: emailDeliveryStatusEnum("status").notNull().default("claimed"),
+
+    /** Adresse réellement servie — redirigée hors production. */
+    recipient: text("recipient").notNull(),
+
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    failureReason: text("failure_reason"),
+
+    ...timestamps,
+  },
+  (table) => [
+    /** La clé métier, pas un identifiant : c'est elle qui rend le doublon impossible. */
+    uniqueIndex("outbound_email_claim_key").on(
+      table.organizationId,
+      table.kind,
+      table.subjectId,
+      table.period,
+    ),
+    staffOnlyPolicy("outbound_email", "organization_id"),
   ],
 );
 

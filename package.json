@@ -22,7 +22,8 @@
     "badges:verify": "tsx scripts/badges-verify.ts",
     "billing:verify": "tsx scripts/billing-verify.ts",
     "parent-authz:verify": "tsx scripts/parent-authz-verify.ts",
-    "makeup:verify": "tsx scripts/makeup-verify.ts"
+    "makeup:verify": "tsx scripts/makeup-verify.ts",
+    "comms:verify": "tsx scripts/comms-verify.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

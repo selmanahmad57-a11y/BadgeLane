@@ -8,6 +8,8 @@ import {
   optionalString,
   requiredString,
 } from "./env.shared";
+import { emailConfigurationProblems } from "./email-guard";
+import { isProduction } from "./runtime";
 
 /**
  * Environnement serveur : secrets et réglages jamais exposés au navigateur.
@@ -68,6 +70,45 @@ const serverEnvSchema = z.object({
   DEFAULT_ORGANIZATION_TIMEZONE: ianaTimeZone,
   DEFAULT_ORGANIZATION_CURRENCY: currencyCode,
   DEFAULT_ORGANIZATION_COUNTRY: countryCode,
+
+  /**
+   * Envoi d'e-mails transactionnels. Facultatif : une instance sans clé
+   * n'envoie rien et le dit, plutôt que d'échouer à l'exécution.
+   */
+  RESEND_API_KEY: optionalString,
+
+  /** Expéditeur. En bac à sable Resend : `onboarding@resend.dev`. */
+  EMAIL_FROM: optionalString,
+
+  /**
+   * ⚠️ LE GARDE-FOU CONTRE L'IRRÉVERSIBLE.
+   *
+   * Hors production, **tout** part vers cette seule adresse, quel que soit le
+   * destinataire calculé. Un e-mail envoyé ne se rappelle pas : c'est le seul
+   * effet de bord du produit qu'aucune transaction ne peut annuler.
+   *
+   * Le nombre d'équipes ayant écrit à leurs vrais utilisateurs depuis un
+   * environnement de mise au point est vertigineux. On ferme la porte avant de
+   * l'ouvrir.
+   */
+  EMAIL_TEST_RECIPIENT: optionalString,
+}).superRefine((value, context) => {
+  /**
+   * La règle vit dans `email-guard.ts`, module pur : un script peut donc
+   * l'exécuter. Ici on ne fait que la brancher sur la validation d'environnement.
+   */
+  for (const problem of emailConfigurationProblems({
+    resendApiKey: value.RESEND_API_KEY,
+    emailFrom: value.EMAIL_FROM,
+    emailTestRecipient: value.EMAIL_TEST_RECIPIENT,
+    isProduction,
+  })) {
+    context.addIssue({
+      code: "custom",
+      path: [problem.field],
+      message: problem.message,
+    });
+  }
 });
 
 const parsed = serverEnvSchema.safeParse(process.env);

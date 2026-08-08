@@ -158,6 +158,8 @@ export const SCHOOL_CATALOGUE_TABLES: readonly string[] = [
 export const STAFF_ONLY_TABLES: readonly string[] = [
   "staff_user",
   "stripe_event",
+  /** Registre des envois : plomberie d'école, invisible au parent. */
+  "outbound_email",
 ];
 
 /**

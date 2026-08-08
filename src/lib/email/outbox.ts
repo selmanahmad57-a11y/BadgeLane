@@ -50,7 +50,7 @@ export type OutboxClaim = {
   recipient: string;
 };
 
-export type OutboxOutcome = "sent" | "already_handled" | "failed";
+export type OutboxOutcome = "accepted" | "already_handled" | "failed";
 
 /** La clé transmise au fournisseur : la même que celle qui borne la table. */
 export function idempotencyKeyFor(claim: OutboxClaim): string {
@@ -61,7 +61,7 @@ export function idempotencyKeyFor(claim: OutboxClaim): string {
 export async function sendOnce(
   claim: OutboxClaim,
   adapter: EmailAdapter,
-  compose: () => Omit<OutboundMessage, "to" | "idempotencyKey" | "kind">,
+  compose: () => Promise<Omit<OutboundMessage, "to" | "idempotencyKey" | "kind">>,
 ): Promise<OutboxOutcome> {
   const period = claim.period ?? "";
 
@@ -89,7 +89,11 @@ export async function sendOnce(
     throw error;
   }
 
-  const composed = compose();
+  /**
+   * La composition a lieu APRÈS la réclamation : inutile de traduire un
+   * message que l'on ne va pas envoyer.
+   */
+  const composed = await compose();
 
   try {
     /** 2. Envoyer, HORS transaction, avec la clé au fournisseur. */
@@ -120,11 +124,16 @@ export async function sendOnce(
     return "failed";
   }
 
-  /** 3. Marquer. */
+  /**
+   * 3. Marquer — `accepted`, jamais `sent`.
+   *
+   * Le fournisseur a accepté la requête. Il n'a pas dit que le parent avait
+   * reçu quoi que ce soit.
+   */
   await withTenant(claim.organizationId, async (tx) => {
     await tx.execute(
       sql`update ${outboundEmail}
-             set status = 'sent', sent_at = now()
+             set status = 'accepted', sent_at = now()
            where organization_id = ${claim.organizationId}
              and kind = ${claim.kind}
              and subject_id = ${claim.subjectId}::uuid
@@ -132,5 +141,5 @@ export async function sendOnce(
     );
   });
 
-  return "sent";
+  return "accepted";
 }

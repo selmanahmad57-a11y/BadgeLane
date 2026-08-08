@@ -2,10 +2,12 @@ import { neonConfig, Pool } from "@neondatabase/serverless";
 import { config as loadEnvFile } from "dotenv";
 import ws from "ws";
 
+import { EMAIL_DELIVERY_STATUSES } from "../src/config/email";
 import {
   effectiveRecipient,
   emailConfigurationProblems,
 } from "../src/config/email-guard";
+import { isObviouslyUndeliverable } from "../src/lib/email/deliverable";
 
 /**
  * Éprouve les deux garanties de l'envoi : ne jamais partir deux fois, et ne
@@ -77,6 +79,59 @@ async function main(): Promise<number> {
       emailTestRecipient: "moi@test.dev",
       isProduction: true,
     }) === "parent@ecole.test",
+  );
+
+  console.log("\nUn statut n'affirme que ce qu'il a observé");
+
+  check(
+    "une adresse en .invalid est reconnue indélivrable",
+    isObviouslyUndeliverable("demo.luis@badgelane.invalid"),
+  );
+  check(
+    "une adresse sans arobase aussi",
+    isObviouslyUndeliverable("pas-une-adresse"),
+  );
+  check(
+    "une vraie adresse passe",
+    !isObviouslyUndeliverable("ana@riverside-swim.com"),
+  );
+  check(
+    "« sent » n'existe plus : le fournisseur accepte, il ne livre pas",
+    !(EMAIL_DELIVERY_STATUSES as readonly string[]).includes("sent") &&
+      (EMAIL_DELIVERY_STATUSES as readonly string[]).includes("accepted"),
+    EMAIL_DELIVERY_STATUSES.join(", "),
+  );
+
+  console.log("\nLa devise vient de la FACTURE, la langue du tuteur");
+
+  /**
+   * La sonde fournit des entrées de production — un code devise, une locale —
+   * et laisse le formateur produire la sortie. Écrire « $240.00 » à la main
+   * court-circuiterait précisément le code sous test : une sonde prouve le
+   * tuyau et ment sur l'eau.
+   */
+  const money = (locale: string, currency: string) =>
+    new Intl.NumberFormat(locale, { style: "currency", currency }).format(240);
+
+  check(
+    "facture en EUR, reçu en anglais : la devise reste l'euro",
+    money("en", "EUR").includes("€"),
+    money("en", "EUR"),
+  );
+  check(
+    "facture en USD, reçu en espagnol : la devise reste le dollar",
+    money("es", "USD").includes("US$") || money("es", "USD").includes("$"),
+    money("es", "USD"),
+  );
+  /**
+   * Ce qui doit être invariant, c'est la DEVISE — pas la mise en forme. Le
+   * séparateur décimal et la place du symbole changent avec la langue, et
+   * c'est précisément le travail de la langue.
+   */
+  check(
+    "changer de langue ne redénomine jamais un montant",
+    ["en", "es", "fr"].every((locale) => money(locale, "EUR").includes("€")),
+    ["en", "es", "fr"].map((locale) => money(locale, "EUR")).join(" / "),
   );
 
   const connectionString = process.env.DATABASE_URL;

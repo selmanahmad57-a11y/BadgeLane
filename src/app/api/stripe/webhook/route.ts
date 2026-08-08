@@ -9,6 +9,10 @@ import { resolveOrganizationForAccount } from "@/db/stripe-lookup";
 import { withTenant } from "@/db/tenant";
 import { forConnectedAccount, getStripe } from "@/lib/stripe";
 import { mirrorInvoice, mirrorSubscription } from "@/lib/stripe-mirror";
+import { sendPaymentConfirmation } from "@/lib/email/payment-confirmation";
+
+/** L'événement qui atteste un paiement — la seule source de vérité. */
+const PAYMENT_CONFIRMED_EVENT = "invoice.paid";
 
 /**
  * Réception des événements Stripe — l'endpoint le plus exposé du produit.
@@ -119,6 +123,12 @@ export async function POST(request: Request) {
     return new Response("ignored", { status: 200 });
   }
 
+  /**
+   * Déclaré hors du `try` : l'objet relu sert encore APRÈS le commit, pour
+   * décider s'il y a une confirmation à envoyer.
+   */
+  let fresh: Stripe.Subscription | Stripe.Invoice | null = null;
+
   try {
     const scoped = forConnectedAccount(accountId);
 
@@ -129,7 +139,7 @@ export async function POST(request: Request) {
     const objectId = (event.data.object as { id?: string }).id;
     if (!objectId) return new Response("ignored", { status: 200 });
 
-    const fresh = event.type.startsWith("customer.subscription.")
+    fresh = event.type.startsWith("customer.subscription.")
       ? await stripe.subscriptions.retrieve(objectId, {}, scoped)
       : await stripe.invoices.retrieve(objectId, {}, scoped);
 
@@ -142,10 +152,10 @@ export async function POST(request: Request) {
         sql`insert into ${stripeEvent} (id, type) values (${event.id}, ${event.type})`,
       );
 
-      if (fresh.object === "subscription") {
-        await mirrorSubscription(tx, organizationId, fresh);
+      if (fresh!.object === "subscription") {
+        await mirrorSubscription(tx, organizationId, fresh as Stripe.Subscription);
       } else {
-        await mirrorInvoice(tx, organizationId, fresh);
+        await mirrorInvoice(tx, organizationId, fresh as Stripe.Invoice);
       }
     });
   } catch (error) {
@@ -164,6 +174,26 @@ export async function POST(request: Request) {
      */
     console.error("[stripe webhook]", event.id, event.type, error);
     return new Response("processing failed", { status: 500 });
+  }
+
+  /**
+   * L'e-mail part APRÈS le commit, dans son propre cycle.
+   *
+   * Le miroir et la marque « traité » forment une transaction de base, que
+   * Postgres atomise vraiment. Un envoi réseau n'y a pas sa place : un e-mail
+   * qui échoue ne doit jamais annuler un paiement déjà enregistré.
+   *
+   * Les deux registres gardent chacun leur porte — `stripe_event` empêche le
+   * webhook de se rejouer, `outbound_email` et la clé d'idempotence empêchent
+   * le double envoi même si Stripe relivre.
+   *
+   * Et l'échec d'envoi ne fait pas échouer la réponse : répondre autre chose
+   * que 200 ferait retenter Stripe sur un événement pourtant traité.
+   */
+  if (event.type === PAYMENT_CONFIRMED_EVENT && fresh?.object === "invoice") {
+    await sendPaymentConfirmation(organizationId, fresh).catch((error) => {
+      console.error("[stripe webhook] confirmation", event.id, error);
+    });
   }
 
   return new Response("ok", { status: 200 });

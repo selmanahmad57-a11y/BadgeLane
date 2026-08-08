@@ -175,3 +175,32 @@ export function isReportWorthSending(report: MonthlyReport): boolean {
     (child) => child.badges.length > 0 || child.skillsAchieved > 0,
   );
 }
+
+/**
+ * Ce qu'un lot a réellement fait — décomposé.
+ *
+ * ── Pourquoi un compteur nu ne suffit pas ───────────────────────────────────
+ *
+ * « 0 accepté » recouvre deux situations que rien ne distingue et qui n'ont
+ * rien à voir :
+ *
+ *   * **mois calme** — aucune famille n'a progressé. Normal, rien à faire.
+ *   * **contact cassé** — des familles avaient des progrès à raconter, et leur
+ *     adresse est indélivrable. Un vrai problème : ces parents ne recevront
+ *     jamais leur rapport, et personne ne le saura.
+ *
+ * Un chiffre qui ne dit pas *pourquoi* laisse le second se cacher derrière le
+ * premier. C'est « rapporte des comptes, pas “fait” » appliqué au cas vide
+ * autant qu'au cas cassé.
+ */
+export type ReportRunSummary = {
+  families: number;
+  /** Familles avec quelque chose à raconter ce mois-ci. */
+  eligible: number;
+  /** Sautées faute de progrès — le cas normal d'un mois calme. */
+  withoutProgress: number;
+  /** Éligibles mais injoignables — le cas qui doit remonter. */
+  undeliverable: number;
+  /** Réellement acceptées par le fournisseur. */
+  accepted: number;
+};

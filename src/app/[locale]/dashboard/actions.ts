@@ -82,12 +82,22 @@ export async function sendMonthlyReports(
       throw new ValidationError("Période invalide.", "invalidPeriod");
     }
 
-    const reports = (
-      await getMonthlyReports(context.organizationId, period)
-    ).filter(isReportWorthSending);
+    const all = await getMonthlyReports(context.organizationId, period);
+    const reports = all.filter(isReportWorthSending);
+
+    /**
+     * Le décompte distingue les deux zéros. Un mois calme et un contact cassé
+     * ne se ressemblent que dans un compteur nu — et le second doit remonter.
+     */
+    let undeliverable = 0;
+    let accepted = 0;
 
     for (const report of reports) {
       if (!report.recipient || isObviouslyUndeliverable(report.recipient)) {
+        undeliverable += 1;
+        console.warn(
+          `[rapport ${period}] ${report.guardianName} : adresse injoignable (${report.recipient ?? "aucune"}) — cette famille ne recevra pas son rapport.`,
+        );
         continue;
       }
 
@@ -104,7 +114,7 @@ export async function sendMonthlyReports(
        * pré-réclamation en masse changerait un plantage précoce en centaines
        * de rapports fantômes.
        */
-      await sendOnce(
+      const outcome = await sendOnce(
         {
           organizationId: context.organizationId,
           kind: "monthly_progress",
@@ -133,11 +143,18 @@ export async function sendMonthlyReports(
           }),
       );
 
+      if (outcome === "accepted") accepted += 1;
+
       /** Espacer plutôt que se faire refuser au milieu de la rafale. */
       await new Promise((resolve) =>
         setTimeout(resolve, EMAIL_BATCH_INTERVAL_MS),
       );
     }
+
+    console.info(
+      `[rapport ${period}] ${all.length} famille(s) · ${reports.length} éligible(s) · ` +
+        `${all.length - reports.length} sans progrès · ${undeliverable} injoignable(s) · ${accepted} accepté(s)`,
+    );
 
     revalidatePath(`/[locale]${routes.dashboard}`, "page");
   });

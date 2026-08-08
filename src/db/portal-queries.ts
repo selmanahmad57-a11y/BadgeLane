@@ -134,22 +134,36 @@ export async function getPortalClasses(
       .where(and(eq(klass.organizationId, organizationId), eq(klass.active, true)))
       .orderBy(asc(klass.dayOfWeek), asc(klass.startTime));
 
-    return Promise.all(
-      rows.map(async (row) => {
-        const counted = await tx.execute(
-          sql`select count_seats_taken(${row.id}::uuid, ${sql.param([
-            ...SEAT_TAKING_STATUSES,
-          ])}::text[]) as total`,
-        );
+    /**
+     * Séquentiel, et non `Promise.all`.
+     *
+     * Une transaction tient UNE connexion, et une connexion Postgres ne traite
+     * qu'une requête à la fois. Lancer les décomptes en parallèle sur le même
+     * `tx` les fait s'écraser — l'erreur ne dit rien d'utile, et elle
+     * n'apparaît qu'une fois qu'il y a assez de cours pour que deux appels se
+     * chevauchent. Un défaut qui grandit avec les données.
+     *
+     * Le coût est nul ici : le décompte est un appel de fonction sur un index,
+     * et une école n'a pas des milliers de cours.
+     */
+    const withSeats = [];
 
-        return {
-          ...row,
-          taken: Number(
-            (counted.rows[0] as { total: number | string }).total ?? 0,
-          ),
-        };
-      }),
-    );
+    for (const row of rows) {
+      const counted = await tx.execute(
+        sql`select count_seats_taken(${row.id}::uuid, ${sql.param([
+          ...SEAT_TAKING_STATUSES,
+        ])}::text[]) as total`,
+      );
+
+      withSeats.push({
+        ...row,
+        taken: Number(
+          (counted.rows[0] as { total: number | string }).total ?? 0,
+        ),
+      });
+    }
+
+    return withSeats;
   });
 }
 
@@ -198,22 +212,31 @@ export async function getPortalEnrollments(
         ),
       )
       .orderBy(asc(student.firstName), asc(klass.dayOfWeek))
-      .then((rows) =>
-        Promise.all(
-          rows.map(async (row) => {
-            if (row.status !== "waitlisted") {
-              return { ...row, waitlistRank: null };
-            }
+      /**
+       * Séquentiel, comme les décomptes de places : une transaction tient une
+       * connexion, et une connexion Postgres ne traite qu'une requête à la
+       * fois. Le `Promise.all` d'origine ne se manifestait qu'à partir de deux
+       * inscriptions en attente — un défaut qui grandit avec les données.
+       */
+      .then(async (rows) => {
+        const ranked = [];
 
-            const ranked = await tx.execute(
-              sql`select waitlist_rank_for_family(${row.klassId}::uuid) as rank`,
-            );
+        for (const row of rows) {
+          if (row.status !== "waitlisted") {
+            ranked.push({ ...row, waitlistRank: null });
+            continue;
+          }
 
-            const rank = (ranked.rows[0] as { rank: number | null }).rank;
-            return { ...row, waitlistRank: rank === null ? null : Number(rank) };
-          }),
-        ),
-      ),
+          const result = await tx.execute(
+            sql`select waitlist_rank_for_family(${row.klassId}::uuid) as rank`,
+          );
+
+          const rank = (result.rows[0] as { rank: number | null }).rank;
+          ranked.push({ ...row, waitlistRank: rank === null ? null : Number(rank) });
+        }
+
+        return ranked;
+      }),
   );
 }
 

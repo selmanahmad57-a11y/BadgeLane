@@ -112,6 +112,17 @@ const DEMO = {
     { firstName: `${DEMO_PREFIX}Mia`, lastName: "Rivera", dateOfBirth: "2016-04-12" },
     { firstName: `${DEMO_PREFIX}Noah`, lastName: "Rivera", dateOfBirth: "2018-09-30" },
   ],
+  /**
+   * Familles supplémentaires, uniquement pour qu'un lot d'envois ait de la
+   * matière. Adresses volontairement indélivrables : le lot démontre ainsi
+   * l'écartement autant que l'envoi.
+   */
+  cohort: [
+    `${DEMO_PREFIX}Osei household`,
+    `${DEMO_PREFIX}Nakamura household`,
+    `${DEMO_PREFIX}Ferreira household`,
+    `${DEMO_PREFIX}Kowalski household`,
+  ],
 } as const;
 
 async function main(): Promise<number> {
@@ -349,6 +360,7 @@ async function seedOrganization(
      * propre contrôle d'existence.
      */
     let createdGuardians = 0;
+    let createdCohort = 0;
 
     const [createdFamily] = existing
       ? [existing]
@@ -357,7 +369,15 @@ async function seedOrganization(
       .values({
         organizationId,
         primaryGuardianName: DEMO.family.primaryGuardianName,
-        email: DEMO.family.email,
+        /**
+         * L'adresse de la FAMILLE, pas seulement celle du premier tuteur.
+         *
+         * Les envois sortants — reçus, rapports — partent au contact du foyer.
+         * Ne poser `DEMO_PARENT_EMAIL` que sur le tuteur laissait la famille en
+         * `.invalid` : le lot n'avait alors nulle part où écrire, et rendait
+         * « 0 accepté » sans que rien ne soit cassé.
+         */
+        email: demoParentEmail ?? DEMO.family.email,
         phone: DEMO.family.phone,
         preferredLanguage,
       })
@@ -405,6 +425,24 @@ async function seedOrganization(
      * plutôt qu'un résultat est pire qu'un script qui échoue.
      */
     let parentEmailApplied = !existing && Boolean(demoParentEmail);
+
+    /**
+     * L'adresse de la FAMILLE se réconcilie aussi, pas seulement à l'insertion.
+     *
+     * Quatrième fois que ce motif apparaît dans ce script : un correctif posé
+     * sur la création laisse intact l'enregistrement déjà là. La famille
+     * restait en `.invalid`, et le lot de rapports n'avait nulle part où
+     * écrire — « 0 accepté » sans que rien ne soit cassé.
+     *
+     * Une garde « si ça existe, ne rien faire » est un mensonge en puissance
+     * dès que le jeu de données bouge. On réconcilie, puis on rapporte.
+     */
+    if (existing && demoParentEmail) {
+      await tx
+        .update(family)
+        .set({ email: demoParentEmail })
+        .where(eq(family.id, createdFamily.id));
+    }
 
     if (existing && demoParentEmail) {
       const [reconciled] = await tx
@@ -752,6 +790,105 @@ async function seedOrganization(
       }
     }
 
+    /**
+     * Un COHORTE de familles supplémentaires, avec des progrès dans le mois.
+     *
+     * Sans elles, un lot de rapports n'a qu'un destinataire — et « tuer à
+     * mi-course » n'a rien à couper. C'est le même défaut que le créneau unique
+     * qui rendait le rattrapage inatteignable : une fonctionnalité correcte que
+     * la forme des données empêche d'exercer.
+     *
+     * Leurs adresses restent en `.invalid` À DESSEIN : le lot démontre ainsi
+     * les DEUX chemins — l'envoi et l'écartement — au lieu d'un seul.
+     */
+    if (firstLevel) {
+      const cohortSkills = await tx
+        .select({ id: skill.id })
+        .from(skill)
+        .where(
+          and(
+            eq(skill.organizationId, organizationId),
+            eq(skill.levelId, firstLevel.id),
+          ),
+        );
+
+      /**
+       * La PREMIÈRE famille de la cohorte reçoit une adresse joignable.
+       *
+       * Sans elle, le lot n'a qu'un seul destinataire réel — et l'on peut
+       * démontrer « l'interrompue rejouée » mais pas « la servie sautée » : au
+       * moment du plantage, aucune famille n'est encore servie. Deux
+       * envoyables sont le minimum pour montrer les deux moitiés de la reprise.
+       */
+      const secondContact = process.env.DEMO_SECOND_CONTACT?.trim().toLowerCase();
+
+      for (const [position, name] of DEMO.cohort.entries()) {
+        const [known] = await tx
+          .select({ id: family.id })
+          .from(family)
+          .where(
+            and(
+              eq(family.organizationId, organizationId),
+              eq(family.primaryGuardianName, name),
+            ),
+          )
+          .limit(1);
+
+        /** Réconcilié au présent, jamais seulement à la création. */
+        if (known) {
+          if (position === 0 && secondContact) {
+            await tx
+              .update(family)
+              .set({ email: secondContact })
+              .where(eq(family.id, known.id));
+          }
+          continue;
+        }
+
+        const [cohortFamily] = await tx
+          .insert(family)
+          .values({
+            organizationId,
+            primaryGuardianName: name,
+            email:
+              position === 0 && secondContact
+                ? secondContact
+                : `${name.replace(DEMO_PREFIX, "").toLowerCase().replace(/\s+/g, ".")}@${DEMO_DOMAIN}`,
+            preferredLanguage,
+          })
+          .returning();
+
+        const [cohortStudent] = await tx
+          .insert(student)
+          .values({
+            organizationId,
+            familyId: cohortFamily.id,
+            firstName: name.replace(DEMO_PREFIX, "").split(" ")[0],
+            lastName: "Demo",
+            dateOfBirth: "2017-06-01",
+            currentLevelId: firstLevel.id,
+          })
+          .returning();
+
+        if (cohortSkills.length > 0) {
+          await tx
+            .insert(skillProgress)
+            .values(
+              cohortSkills.map((entry) => ({
+                organizationId,
+                studentId: cohortStudent.id,
+                skillId: entry.id,
+                status: "achieved" as const,
+                achievedAt: new Date(),
+              })),
+            )
+            .onConflictDoNothing();
+        }
+
+        createdCohort += 1;
+      }
+    }
+
     console.log(
       [
         "Données de démonstration créées :",
@@ -765,6 +902,7 @@ async function seedOrganization(
         `  famille     ${existing ? "déjà présente" : "créée"} — ${DEMO.family.primaryGuardianName}`,
         `  tuteurs     ${createdGuardians} ajouté(s), ${DEMO.guardians.length - createdGuardians} déjà présent(s)`,
         `  élèves      ${createdStudents} créé(s), ${DEMO.students.length - createdStudents} déjà présent(s)`,
+        `  cohorte     ${createdCohort} famille(s) ajoutée(s) — de quoi interrompre un lot de rapports`,
         awardedSkills > 0
           ? `  badges      ${awardedSkills} compétence(s) acquise(s) par le premier élève — son badge de niveau est visible au portail`
           : "  badges      aucune compétence acquise : le mur de badges sera vide",

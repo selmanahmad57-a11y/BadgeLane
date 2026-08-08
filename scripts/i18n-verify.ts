@@ -92,6 +92,23 @@ function main(): number {
 
   if (problems.length === 0) {
     console.log("Catalogues de traduction : OK.");
+    /**
+     * Le rappel qui ferme la boucle.
+     *
+     * `src/i18n/request.ts` charge les catalogues par un import DYNAMIQUE à
+     * littéral de gabarit — c'est ce qui permet d'ajouter une langue en
+     * déposant un fichier, sans toucher au TypeScript. Turbopack ne peut donc
+     * pas l'analyser statiquement : il résout le JSON à l'exécution et le garde
+     * en cache. Éditer un catalogue pendant que `next dev` tourne n'invalide
+     * rien, et l'écran affiche `MISSING_MESSAGE` sur une clé pourtant présente.
+     *
+     * Ce script est le dernier endroit où quelqu'un regarde après avoir touché
+     * une traduction : c'est donc ici que le rappel a le plus de chances d'être
+     * lu, plutôt que dans un README qu'on relit une fois.
+     */
+    console.log(
+      "\nRappel : un catalogue modifié n'est pris en compte qu'au redémarrage de « npm run dev » — l'import des messages est dynamique, donc mis en cache par Turbopack.",
+    );
     return 0;
   }
 

@@ -201,6 +201,26 @@ du code. Ils se règlent l'un et l'autre en repartant proprement :
 rm -rf .next && npm run dev
 ```
 
+**Un catalogue de traduction modifié exige un redémarrage.** `MISSING_MESSAGE`
+sur une clé pourtant présente dans `messages/<langue>.json` n'est pas un bug de
+next-intl : `src/i18n/request.ts` charge les catalogues par un import
+**dynamique à littéral de gabarit** — c'est ce qui permet d'ajouter une langue
+en déposant un fichier, sans toucher au TypeScript. Turbopack ne peut donc pas
+l'analyser statiquement, résout le JSON à l'exécution et le garde en cache ;
+l'éditer pendant que `next dev` tourne n'invalide rien.
+
+`npm run i18n:verify` le rappelle en fin d'exécution, parce que c'est le dernier
+endroit où l'on regarde après avoir touché une traduction.
+
+**Ne lance jamais `npm run build` pendant que `next dev` tourne.** Les deux
+écrivent dans `.next` et l'un corrompt l'artefact de l'autre. Le symptôme est
+déroutant : les scripts `*:verify` passent au vert — ils lisent la base en
+direct, jamais à travers `.next` — pendant que le navigateur sert du périmé.
+
+> **Signature à retenir : `verify` vert + navigateur faux = bug de cache.**
+> Le désaccord entre les deux *est* le diagnostic. Étape zéro avant de creuser :
+> `rm -rf .next`, puis relancer `dev`.
+
 **Symptôme 1 — `MISSING_MESSAGE` sur une clé qui existe.** Les catalogues sont
 chargés par un import dynamique paramétré par la langue ; c'est ce qui permet
 d'ajouter une langue sans toucher au code, et c'est aussi ce qui empêche

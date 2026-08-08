@@ -283,6 +283,88 @@ async function main(): Promise<number> {
       String(otherPeriod),
     );
 
+    // ── La reprise se pilote par le STATUT, jamais par l'existence ────────
+    //
+    // Le cycle est réclamer → envoyer → marquer. Un plantage ENTRE les deux
+    // laisse une ligne `claimed` dont rien n'est parti. Sauter toute ligne
+    // présente condamnerait cette famille à ne jamais recevoir son rapport —
+    // sans erreur, sans trace. C'est le trou silencieux d'un traitement par
+    // lot, et le pire de tous.
+
+    console.log("\nReprise après plantage : statut, pas existence");
+
+    const reportSubject = crypto.randomUUID();
+
+    /** Deux familles : l'une servie, l'autre réclamée puis interrompue. */
+    await client.query(
+      `insert into outbound_email (organization_id, kind, subject_id, period, recipient, status, sent_at)
+       values ($1, 'monthly_progress', $2, '2026-08', 'servie@example.test', 'accepted', now())`,
+      [organizationId, reportSubject],
+    );
+
+    const interrupted = crypto.randomUUID();
+    await client.query(
+      `insert into outbound_email (organization_id, kind, subject_id, period, recipient, status)
+       values ($1, 'monthly_progress', $2, '2026-08', 'interrompue@example.test', 'claimed')`,
+      [organizationId, interrupted],
+    );
+
+    const statusOf = async (subject: string) =>
+      (
+        await client.query(
+          "select status from outbound_email where subject_id = $1 and period = '2026-08'",
+          [subject],
+        )
+      ).rows[0]?.status;
+
+    check(
+      "la famille servie porte « accepted »",
+      (await statusOf(reportSubject)) === "accepted",
+    );
+    check(
+      "la famille interrompue porte « claimed » — rien n'est parti",
+      (await statusOf(interrupted)) === "claimed",
+    );
+
+    /**
+     * La règle de reprise, exprimée telle que le lot l'applique : on saute
+     * `accepted`, on rejoue tout le reste.
+     */
+    const toReplay = (
+      await client.query(
+        `select subject_id from outbound_email
+          where period = '2026-08' and kind = 'monthly_progress'
+            and status <> 'accepted'`,
+      )
+    ).rows.map((row) => row.subject_id as string);
+
+    check(
+      "la reprise rejoue la famille interrompue",
+      toReplay.includes(interrupted),
+      toReplay.length + " à rejouer",
+    );
+    check(
+      "et ne rejoue PAS la famille déjà servie",
+      !toReplay.includes(reportSubject),
+    );
+
+    /**
+     * Contrôle du contrôle : une reprise pilotée par l'EXISTENCE sauterait les
+     * deux — et la famille interrompue ne recevrait jamais rien.
+     */
+    const byExistence = (
+      await client.query(
+        `select subject_id from outbound_email
+          where period = '2026-08' and kind = 'monthly_progress'`,
+      )
+    ).rows.length;
+
+    check(
+      "piloter par l'existence sauterait AUSSI l'interrompue — le trou silencieux",
+      byExistence === 2 && toReplay.length === 1,
+      `${byExistence} lignes, ${toReplay.length} à rejouer`,
+    );
+
     await client.query("rollback");
   } catch (error) {
     console.error("\n  erreur :", (error as Error).message);

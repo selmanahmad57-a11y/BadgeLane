@@ -81,12 +81,44 @@ export async function sendOnce(
       });
     });
   } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+
     /**
-     * Déjà réclamé : quelqu'un d'autre s'en occupe, ou s'en est occupé. Ce
-     * n'est pas une panne — c'est la contrainte qui fait son travail.
+     * ── LA LIGNE EXISTE. MAIS DIT-ELLE QUE C'EST PARTI ? ────────────────────
+     *
+     * Version précédente : « déjà réclamé → ne rien faire ». C'était un trou
+     * silencieux, et le pire des bugs de lot.
+     *
+     * Le cycle est réclamer → envoyer → marquer. Un plantage ENTRE la
+     * réclamation et l'envoi laisse une ligne `claimed` dont l'e-mail n'est
+     * jamais parti. Sauter toute ligne présente condamnait cette famille à ne
+     * **jamais** recevoir son rapport — sans erreur, sans trace, sans que
+     * personne le sache.
+     *
+     * La reprise se pilote donc par le STATUT, jamais par l'existence :
+     * `accepted` est acquis et se saute ; `claimed` et `failed` se rejouent.
+     *
+     * Rejouer est sans danger précisément grâce à la clé d'idempotence : si
+     * l'envoi avait en réalité abouti avant le plantage, le fournisseur
+     * reconnaît la clé et ne renvoie rien. Les deux mécanismes se complètent —
+     * la base décide qu'on retente, le fournisseur décide qu'on ne double pas.
      */
-    if (isUniqueViolation(error)) return "already_handled";
-    throw error;
+    const existing = await withTenant(claim.organizationId, async (tx) => {
+      const { rows } = await tx.execute(
+        sql`select status from ${outboundEmail}
+             where organization_id = ${claim.organizationId}
+               and kind = ${claim.kind}
+               and subject_id = ${claim.subjectId}::uuid
+               and period = ${period}
+             limit 1`,
+      );
+
+      return (rows[0] as { status?: string })?.status ?? null;
+    });
+
+    if (existing === "accepted") return "already_handled";
+
+    /** `claimed` ou `failed` : l'envoi n'a pas abouti, on le rejoue. */
   }
 
   /**

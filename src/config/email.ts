@@ -48,3 +48,22 @@ export const EMAIL_DELIVERY_STATUSES = [
 ] as const;
 
 export type EmailDeliveryStatus = (typeof EMAIL_DELIVERY_STATUSES)[number];
+
+/**
+ * Intervalle minimal entre deux envois d'un lot, en millisecondes.
+ *
+ * Un rapport mensuel part à toutes les familles le même jour : c'est une
+ * rafale, et un fournisseur la limite. Espacer les envois coûte quelques
+ * minutes sur un lot et évite d'être refusé au milieu.
+ */
+export const EMAIL_BATCH_INTERVAL_MS = 600;
+
+/**
+ * Envois quotidiens inclus dans le palier gratuit de Resend.
+ *
+ * Une école de plus de cent familles le franchit dès son premier rapport. Le
+ * lot l'annonce AVANT de commencer plutôt que de le découvrir à la centième —
+ * un échec de facturation au milieu d'une rafale laisse la moitié des parents
+ * sans nouvelles, et personne ne sait laquelle.
+ */
+export const EMAIL_FREE_TIER_DAILY_LIMIT = 100;

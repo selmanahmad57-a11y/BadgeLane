@@ -400,5 +400,9 @@
     "makeupNoOption": "No session of your child's level has room right now. Check back — places open up.",
     "reportAbsence": "Report an absence",
     "makeupNote": "Tell us before the lesson and we turn it into a credit. Places shown are indicative: if the session fills up before you tap, we say so rather than squeezing an extra child into the pool."
+  },
+  "email": {
+    "paymentConfirmationSubject": "{school} — payment received",
+    "paymentConfirmationBody": "Hello {guardian},\n\nWe have received your payment of {amount} for {school}.\n\nYou can see your invoices any time in the family portal.\n\nThis message was sent once your bank confirmed the payment — never because a page was reloaded.\n\n— {school}"
   }
 }

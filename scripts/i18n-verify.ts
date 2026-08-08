@@ -164,8 +164,16 @@ function checkUsedKeys(reference: Set<string>): {
     const source = readFileSync(file, "utf8");
 
     const namespaces = [
-      ...source.matchAll(/(?:get|use)Translations\(\s*"([^"]+)"/g),
-    ].map((match) => match[1]);
+      /**
+       * `createTranslator` compte autant que les deux autres : c'est par lui
+       * que passent les e-mails, seule surface de texte composée hors requête.
+       * L'oublier ici laisserait un reçu partir dans une langue non servie —
+       * ce qui est exactement arrivé une fois.
+       */
+      ...source.matchAll(
+        /(?:get|use)Translations\(\s*"([^"]+)"|createTranslator\(\{[^}]*namespace:\s*"([^"]+)"/g,
+      ),
+    ].flatMap((match) => [match[1], match[2]].filter(Boolean) as string[]);
 
     if (namespaces.length === 0) continue;
 

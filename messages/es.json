@@ -400,5 +400,9 @@
     "makeupNoOption": "Ninguna sesión del nivel de tu hijo tiene sitio ahora mismo. Vuelve a mirar: las plazas se liberan.",
     "reportAbsence": "Avisar de una ausencia",
     "makeupNote": "Avísanos antes de la clase y la convertimos en un crédito. Las plazas mostradas son orientativas: si la sesión se llena antes de que pulses, te lo decimos en lugar de meter a un niño más en la piscina."
+  },
+  "email": {
+    "paymentConfirmationSubject": "{school} — pago recibido",
+    "paymentConfirmationBody": "Hola {guardian}:\n\nHemos recibido tu pago de {amount} para {school}.\n\nPuedes consultar tus facturas cuando quieras en el portal de familias.\n\nEste mensaje se ha enviado una vez que tu banco confirmó el pago, nunca porque se haya recargado una página.\n\n— {school}"
   }
 }

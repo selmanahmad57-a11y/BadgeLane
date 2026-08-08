@@ -87,6 +87,8 @@ export const ACTION_REASONS = [
   "alreadyOnRoster",
   /** Aucun crédit utilisable — consommé, expiré, ou déjà réservé. */
   "noUsableCredit",
+  /** Période de rapport mal formée — attendu « YYYY-MM ». */
+  "invalidPeriod",
 ] as const;
 
 export type ActionReason = (typeof ACTION_REASONS)[number];

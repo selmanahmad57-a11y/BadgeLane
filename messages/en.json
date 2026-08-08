@@ -110,7 +110,12 @@
     "summaryFamiliesValue": "{families, plural, one {# household} other {# households}} · {students, plural, one {# swimmer} other {# swimmers}}",
     "summaryEnrollments": "Enrolments",
     "summaryEnrollmentsValue": "{active} active · {waitlisted} on the waiting list",
-    "summaryOutstanding": "Outstanding"
+    "summaryOutstanding": "Outstanding",
+    "reportsHeading": "Monthly progress reports",
+    "reportsSend": "Send reports",
+    "reportsPeriod": "Month",
+    "reportsPeriodPlaceholder": "2026-08",
+    "reportsNote": "Leave the month empty to send the last completed one. Families with no progress are skipped — a monthly email that says nothing teaches parents to stop opening them. If the run is interrupted, just start it again: families already sent are skipped, and nobody receives twice."
   },
   "curriculum": {
     "heading": "Curriculum",

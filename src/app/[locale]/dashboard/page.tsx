@@ -7,10 +7,13 @@ import { ActionForm } from "@/components/action-form";
 import { can } from "@/config/permissions";
 import { getEnrollmentsToReview, getSchoolSummary } from "@/db/queries";
 
+import { Input } from "@/components/ui/input";
+
 import {
   endEnrollment,
   markEnrollmentReviewed,
 } from "../schedule/enrollment-actions";
+import { sendMonthlyReports } from "./actions";
 
 type DashboardPageProps = {
   params: Promise<{ locale: string }>;
@@ -151,6 +154,35 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
         Semaine 1 et devenu faux dès la Semaine 3. Un écran qui affirme une
         chose que les données démentent apprend à ne pas lire ce qui est écrit.
       */}
+      {can(session.staffUser.role, "communications:send") ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("reportsHeading")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <ActionForm
+              action={sendMonthlyReports}
+              submitLabel={t("reportsSend")}
+              size="sm"
+            >
+              <Input
+                name="period"
+                placeholder={t("reportsPeriodPlaceholder")}
+                aria-label={t("reportsPeriod")}
+                className="w-full sm:w-32"
+              />
+            </ActionForm>
+            {/*
+              La reprise rend le lot tolérant au délai : une exécution
+              interrompue se relance sans rien doubler ni rien perdre.
+            */}
+            <p className="text-muted-foreground text-sm text-pretty">
+              {t("reportsNote")}
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>{t("summaryHeading")}</CardTitle>

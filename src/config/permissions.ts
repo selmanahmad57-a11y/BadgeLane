@@ -28,6 +28,14 @@ export const CAPABILITIES = [
   "progression:write",
   /** Connecter le compte Stripe de l'école et gérer les tarifs. */
   "billing:manage",
+  /**
+   * Déclencher les envois massifs aux familles — les rapports mensuels.
+   *
+   * Sa propre capacité, et non un dérivé de `billing:manage` : écrire à toutes
+   * les familles d'une école est l'opération la plus puissante du produit, et
+   * la seule dont l'effet ne s'annule pas. Elle mérite d'être nommée.
+   */
+  "communications:send",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -48,6 +56,7 @@ const CAPABILITIES_BY_ROLE: Readonly<Record<StaffRole, readonly Capability[]>> =
       "attendance:write",
       "progression:write",
       "billing:manage",
+      "communications:send",
     ],
     admin: [
       "curriculum:write",
@@ -58,6 +67,7 @@ const CAPABILITIES_BY_ROLE: Readonly<Record<StaffRole, readonly Capability[]>> =
       "attendance:write",
       "progression:write",
       "billing:manage",
+      "communications:send",
     ],
     /**
      * Le coach écrit deux choses, et deux seulement : la présence et les

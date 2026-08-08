@@ -110,7 +110,12 @@
     "summaryFamiliesValue": "{families, plural, one {# hogar} other {# hogares}} · {students, plural, one {# nadador} other {# nadadores}}",
     "summaryEnrollments": "Inscripciones",
     "summaryEnrollmentsValue": "{active} activas · {waitlisted} en lista de espera",
-    "summaryOutstanding": "Pendiente de cobro"
+    "summaryOutstanding": "Pendiente de cobro",
+    "reportsHeading": "Informes mensuales de progreso",
+    "reportsSend": "Enviar informes",
+    "reportsPeriod": "Mes",
+    "reportsPeriodPlaceholder": "2026-08",
+    "reportsNote": "Deja el mes vacío para enviar el último mes cerrado. Las familias sin progreso se omiten: un correo mensual que no dice nada enseña a los padres a no abrirlos. Si la ejecución se interrumpe, vuelve a lanzarla: las familias ya enviadas se omiten y nadie recibe dos veces."
   },
   "curriculum": {
     "heading": "Plan de estudios",

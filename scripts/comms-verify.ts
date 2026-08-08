@@ -8,6 +8,10 @@ import {
   emailConfigurationProblems,
 } from "../src/config/email-guard";
 import { isObviouslyUndeliverable } from "../src/lib/email/deliverable";
+import {
+  isValidPeriod,
+  previousCivilMonth,
+} from "../src/lib/reporting-period";
 
 /**
  * Éprouve les deux garanties de l'envoi : ne jamais partir deux fois, et ne
@@ -79,6 +83,34 @@ async function main(): Promise<number> {
       emailTestRecipient: "moi@test.dev",
       isProduction: true,
     }) === "parent@ecole.test",
+  );
+
+  console.log("\nLa période est une décision, pas une lecture d'horloge");
+
+  check(
+    "le 1er septembre, le mois révolu est août",
+    previousCivilMonth("2026-09-01") === "2026-08",
+    previousCivilMonth("2026-09-01"),
+  );
+  /**
+   * Le bord que `now() - interval '1 month'` rate : lancé le 31 août, il rend
+   * le 31 juillet, donc juillet — alors que le dernier mois RÉVOLU est bien
+   * juillet aussi, mais pour une autre raison. Le piège apparaît sur les mois
+   * de longueurs différentes : le 31 mars, l'intervalle saute février.
+   */
+  check(
+    "le 31 mars ne saute pas février",
+    previousCivilMonth("2026-03-31") === "2026-02",
+    previousCivilMonth("2026-03-31"),
+  );
+  check(
+    "janvier renvoie au décembre de l'année précédente",
+    previousCivilMonth("2026-01-15") === "2025-12",
+    previousCivilMonth("2026-01-15"),
+  );
+  check(
+    "une période mal formée est refusée",
+    !isValidPeriod("2026-13") && !isValidPeriod("aout") && isValidPeriod("2026-08"),
   );
 
   console.log("\nUn statut n'affirme que ce qu'il a observé");

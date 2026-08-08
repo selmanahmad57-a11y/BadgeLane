@@ -1,6 +1,7 @@
 import "server-only";
 
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 import {
   LIVE_ENROLLMENT_STATUSES,
@@ -9,17 +10,24 @@ import {
 
 import { withFamily } from "./tenant";
 import { UNPAID_INVOICE_STATUSES } from "@/config/billing";
+import { ROSTER_EXCLUDED_STATUSES } from "@/config/enrollment";
+import { MAKEUP_OCCUPYING_STATUSES, type MakeupDerivedState } from "@/config/makeup";
+import { CANCELLED_OCCURRENCE_STATUS } from "@/config/scheduling";
+import { makeupCreditState } from "@/lib/makeup";
 
 import {
+  classOccurrence,
   enrollment,
   family,
   invoice,
+  makeupCredit,
   klass,
   level,
   location,
   organization,
   program,
   student,
+  term,
 } from "./schema";
 import { readStudentProgress, type StudentLevelProgress } from "./queries";
 
@@ -380,6 +388,212 @@ export async function getPortalBilling(
       outstanding: rows
         .filter((row) => UNPAID_INVOICE_STATUSES.includes(row.status))
         .reduce((total, row) => total + row.amount, 0),
+    };
+  });
+}
+
+export type PortalMakeup = {
+  /** Séances à venir où l'enfant est inscrit — celles qu'on peut manquer. */
+  upcoming: {
+    occurrenceId: string;
+    studentId: string;
+    studentFirstName: string;
+    klassTitle: string;
+    date: string;
+    alreadyReported: boolean;
+  }[];
+  /** Crédits utilisables, et les séances où les poser. */
+  credits: {
+    creditId: string;
+    studentFirstName: string;
+    missedOn: string;
+    usableThrough: string | null;
+    state: MakeupDerivedState;
+    options: {
+      occurrenceId: string;
+      klassTitle: string;
+      date: string;
+      seatsLeft: number;
+    }[];
+  }[];
+};
+
+/**
+ * Tout ce que le portail montre des rattrapages.
+ *
+ * ── Les places affichées sont indicatives ───────────────────────────────────
+ *
+ * Comme à l'inscription, le nombre montré peut être périmé au moment du tap. Ce
+ * n'est pas un défaut : le verrou pris sur la SÉANCE décide seul. Une séance
+ * qui se remplit entre-temps produit un refus expliqué — « c'était plein » —
+ * jamais une erreur technique.
+ *
+ * ── L'échéance est lue vivante ──────────────────────────────────────────────
+ *
+ * `coalesce(extended_until, term.end_date)` : aucune date figée à la création.
+ * Une école qui prolonge son trimestre prolonge ses crédits, sans qu'une seule
+ * ligne soit réécrite.
+ */
+export async function getPortalMakeups(
+  organizationId: string,
+  familyId: string,
+  today: string,
+): Promise<PortalMakeup> {
+  return withFamily(organizationId, familyId, async (tx) => {
+    const missed = alias(classOccurrence, "missed");
+    const missedKlass = alias(klass, "missed_klass");
+
+    /** Séances à venir où l'enfant est régulièrement inscrit. */
+    const upcomingRows = await tx
+      .select({
+        occurrenceId: classOccurrence.id,
+        studentId: student.id,
+        studentFirstName: student.firstName,
+        klassTitle: klass.title,
+        date: classOccurrence.date,
+        creditId: makeupCredit.id,
+      })
+      .from(classOccurrence)
+      .innerJoin(klass, eq(klass.id, classOccurrence.klassId))
+      .innerJoin(
+        enrollment,
+        and(
+          eq(enrollment.klassId, classOccurrence.klassId),
+          eq(enrollment.organizationId, organizationId),
+          ne(enrollment.status, "waitlisted"),
+          lte(enrollment.startDate, classOccurrence.date),
+          or(
+            isNull(enrollment.endDate),
+            gte(enrollment.endDate, classOccurrence.date),
+          ),
+        )!,
+      )
+      .innerJoin(student, eq(student.id, enrollment.studentId))
+      .leftJoin(
+        makeupCredit,
+        and(
+          eq(makeupCredit.missedOccurrenceId, classOccurrence.id),
+          eq(makeupCredit.studentId, student.id),
+        ),
+      )
+      .where(
+        and(
+          eq(classOccurrence.organizationId, organizationId),
+          gt(classOccurrence.date, today),
+          ne(classOccurrence.status, CANCELLED_OCCURRENCE_STATUS),
+        ),
+      )
+      .orderBy(asc(classOccurrence.date), asc(student.firstName))
+      .limit(20);
+
+    /** Les crédits du foyer, avec leur échéance dérivée. */
+    const creditRows = await tx
+      .select({
+        creditId: makeupCredit.id,
+        studentFirstName: student.firstName,
+        studentLevelId: student.currentLevelId,
+        status: makeupCredit.status,
+        missedOn: missed.date,
+        usableThrough: sql<string | null>`coalesce(${makeupCredit.extendedUntil}, ${term.endDate})`,
+        bookedOn: classOccurrence.date,
+        bookedStatus: classOccurrence.status,
+      })
+      .from(makeupCredit)
+      .innerJoin(student, eq(student.id, makeupCredit.studentId))
+      .innerJoin(missed, eq(missed.id, makeupCredit.missedOccurrenceId))
+      .innerJoin(missedKlass, eq(missedKlass.id, missed.klassId))
+      .innerJoin(term, eq(term.id, missedKlass.termId))
+      .leftJoin(
+        classOccurrence,
+        eq(classOccurrence.id, makeupCredit.bookedOccurrenceId),
+      )
+      .where(eq(makeupCredit.organizationId, organizationId))
+      .orderBy(asc(missed.date));
+
+    const credits = [];
+
+    for (const row of creditRows) {
+      const state = makeupCreditState({
+        status: row.status,
+        usableThrough: row.usableThrough,
+        bookedOn: row.bookedOn,
+        bookedOccurrenceStatus: row.bookedStatus,
+        today,
+      });
+
+      /**
+       * Les séances où poser ce crédit : à venir, du niveau ACTUEL de l'enfant.
+       * Pas une contrainte administrative — de l'eau plus profonde et un
+       * encadrement pensé pour un autre public.
+       */
+      const options =
+        state === "available" && row.studentLevelId
+          ? await tx
+              .select({
+                occurrenceId: classOccurrence.id,
+                klassTitle: klass.title,
+                date: classOccurrence.date,
+                capacity: klass.capacity,
+              })
+              .from(classOccurrence)
+              .innerJoin(klass, eq(klass.id, classOccurrence.klassId))
+              .where(
+                and(
+                  eq(classOccurrence.organizationId, organizationId),
+                  gt(classOccurrence.date, today),
+                  ne(classOccurrence.status, CANCELLED_OCCURRENCE_STATUS),
+                  eq(klass.levelId, row.studentLevelId),
+                ),
+              )
+              .orderBy(asc(classOccurrence.date))
+              .limit(10)
+          : [];
+
+      const withSeats = [];
+
+      for (const option of options) {
+        const counted = await tx.execute(
+          sql`select count_occurrence_attendees(
+                ${option.occurrenceId}::uuid,
+                ${sql.param([...ROSTER_EXCLUDED_STATUSES])}::text[],
+                ${sql.param([...MAKEUP_OCCUPYING_STATUSES])}::text[]
+              ) as total`,
+        );
+
+        const taken = Number(
+          (counted.rows[0] as { total: number | string }).total ?? 0,
+        );
+
+        if (taken < option.capacity) {
+          withSeats.push({
+            occurrenceId: option.occurrenceId,
+            klassTitle: option.klassTitle,
+            date: option.date,
+            seatsLeft: option.capacity - taken,
+          });
+        }
+      }
+
+      credits.push({
+        creditId: row.creditId,
+        studentFirstName: row.studentFirstName,
+        missedOn: row.missedOn,
+        usableThrough: row.usableThrough,
+        state,
+        options: withSeats,
+      });
+    }
+
+    return {
+      upcoming: upcomingRows.map((row) => ({
+        occurrenceId: row.occurrenceId,
+        studentId: row.studentId,
+        studentFirstName: row.studentFirstName,
+        klassTitle: row.klassTitle,
+        date: row.date,
+        alreadyReported: row.creditId !== null,
+      })),
+      credits,
     };
   });
 }

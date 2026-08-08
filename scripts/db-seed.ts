@@ -83,6 +83,18 @@ const DEMO = {
   },
   classes: [
     { title: `${DEMO_PREFIX}Tuesday Guppies`, levelName: "Guppy", dayOfWeek: 2, startTime: "17:00", durationMin: 30, capacity: 8 },
+    /**
+     * Un SECOND créneau Guppy, et ce n'est pas décoratif.
+     *
+     * Un rattrapage ne peut pas se faire dans son propre cours : l'enfant y
+     * figure déjà au roster de chaque séance, il y compterait deux corps. Il
+     * lui faut un autre créneau du MÊME niveau — donc une école qui n'en
+     * propose qu'un par niveau ne peut offrir aucun rattrapage.
+     *
+     * La démonstration doit donc en avoir deux, sinon elle montre un produit
+     * dont la fonctionnalité est structurellement inatteignable.
+     */
+    { title: `${DEMO_PREFIX}Saturday Guppies`, levelName: "Guppy", dayOfWeek: 6, startTime: "09:00", durationMin: 30, capacity: 8 },
     { title: `${DEMO_PREFIX}Thursday Minnows`, levelName: "Minnow", dayOfWeek: 4, startTime: "17:45", durationMin: 45, capacity: 6 },
     { title: `${DEMO_PREFIX}Saturday Dolphins`, levelName: "Dolphin", dayOfWeek: 6, startTime: "10:00", durationMin: 45, capacity: 10 },
   ],
@@ -500,66 +512,106 @@ async function seedOrganization(
     let generatedOccurrences = 0;
     let createdClasses = 0;
 
-    if (!existingTerm) {
-      const [createdTerm] = await tx
-        .insert(term)
+    /**
+     * Le planning est réconcilié COURS PAR COURS, pas en bloc.
+     *
+     * La version précédente sautait tout dès que la session existait — et
+     * annonçait « planning déjà présent ». Ajouter un créneau au jeu de
+     * démonstration ne produisait alors rien, tout en affichant un succès.
+     *
+     * C'est la troisième fois que ce motif apparaît dans ce script : une garde
+     * « si ça existe, ne rien faire » qui rapporte un travail non accompli.
+     * Corrigé ici comme pour les tuteurs et les compétences — on réconcilie,
+     * puis on rapporte ce qu'on a réellement fait.
+     */
+    const activeTerm =
+      existingTerm ??
+      (
+        await tx
+          .insert(term)
+          .values({
+            organizationId,
+            name: DEMO.term.name,
+            startDate: DEMO.term.startDate,
+            endDate: DEMO.term.endDate,
+            enrollmentOpen: true,
+          })
+          .returning()
+      )[0];
+
+    const [existingLocation] = await tx
+      .select({ id: location.id })
+      .from(location)
+      .where(
+        and(
+          eq(location.organizationId, organizationId),
+          eq(location.name, DEMO.location.name),
+        ),
+      )
+      .limit(1);
+
+    const activeLocation =
+      existingLocation ??
+      (
+        await tx
+          .insert(location)
+          .values({ organizationId, name: DEMO.location.name })
+          .returning()
+      )[0];
+
+    const knownClasses = new Set(
+      (
+        await tx
+          .select({ title: klass.title })
+          .from(klass)
+          .where(eq(klass.organizationId, organizationId))
+      ).map((row) => row.title),
+    );
+
+    for (const entry of DEMO.classes) {
+      if (knownClasses.has(entry.title)) continue;
+
+      const target = levelsByName.get(entry.levelName);
+      /** Sans le niveau correspondant, on saute plutôt que d'inventer. */
+      if (!target) continue;
+
+      const [createdClass] = await tx
+        .insert(klass)
         .values({
           organizationId,
-          name: DEMO.term.name,
-          startDate: DEMO.term.startDate,
-          endDate: DEMO.term.endDate,
-          enrollmentOpen: true,
+          termId: activeTerm.id,
+          programId: target.programId,
+          levelId: target.id,
+          locationId: activeLocation.id,
+          title: entry.title,
+          dayOfWeek: entry.dayOfWeek,
+          startTime: entry.startTime,
+          durationMin: entry.durationMin,
+          capacity: entry.capacity,
         })
         .returning();
 
-      const [createdLocation] = await tx
-        .insert(location)
-        .values({ organizationId, name: DEMO.location.name })
-        .returning();
+      createdClasses += 1;
 
-      for (const entry of DEMO.classes) {
-        const target = levelsByName.get(entry.levelName);
-        /** Sans le niveau correspondant, on saute plutôt que d'inventer. */
-        if (!target) continue;
+      const dates = occurrenceDatesFor(
+        DEMO.term.startDate,
+        DEMO.term.endDate,
+        entry.dayOfWeek,
+      );
 
-        const [createdClass] = await tx
-          .insert(klass)
-          .values({
-            organizationId,
-            termId: createdTerm.id,
-            programId: target.programId,
-            levelId: target.id,
-            locationId: createdLocation.id,
-            title: entry.title,
-            dayOfWeek: entry.dayOfWeek,
-            startTime: entry.startTime,
-            durationMin: entry.durationMin,
-            capacity: entry.capacity,
-          })
-          .returning();
+      if (dates.length > 0) {
+        await tx
+          .insert(classOccurrence)
+          .values(
+            dates.map((date) => ({
+              organizationId,
+              klassId: createdClass.id,
+              date,
+            })),
+          )
+          .onConflictDoNothing();
 
-        createdClasses += 1;
-
-        const dates = occurrenceDatesFor(
-          DEMO.term.startDate,
-          DEMO.term.endDate,
-          entry.dayOfWeek,
-        );
-
-        if (dates.length > 0) {
-          await tx
-            .insert(classOccurrence)
-            .values(
-              dates.map((date) => ({
-                organizationId,
-                klassId: createdClass.id,
-                date,
-              })),
-            )
-            .onConflictDoNothing();
-
-          generatedOccurrences += dates.length;
-        }
+        generatedOccurrences += dates.length;
       }
     }
 
@@ -711,9 +763,9 @@ async function seedOrganization(
             ? `  niveau      « ${firstLevel.name} » (r\u00e9)affect\u00e9 au premier \u00e9l\u00e8ve`
             : `  niveau      « ${firstLevel.name} » d\u00e9j\u00e0 affect\u00e9`
           : "  niveau      aucun niveau existant : aucune affectation",
-        existingTerm
-          ? "  planning    déjà présent"
-          : `  planning    « ${DEMO.term.name} », ${createdClasses} cours, ${generatedOccurrences} séances générées`,
+        createdClasses > 0
+          ? `  planning    ${createdClasses} cours ajouté(s), ${generatedOccurrences} séances générées`
+          : "  planning    tous les cours de la démonstration sont déjà présents",
         /**
          * Trois états distincts, jamais confondus : appliqué, non demandé, ou
          * demandé sans cible trouvée. Le troisième est le seul qui mérite qu'on

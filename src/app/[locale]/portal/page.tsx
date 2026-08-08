@@ -7,6 +7,7 @@ import {
   getPortalClasses,
   getPortalEnrollments,
   getPortalBilling,
+  getPortalMakeups,
   getPortalFamilyLabel,
   getPortalSchool,
 } from "@/db/portal-queries";
@@ -16,7 +17,14 @@ import { ActionForm } from "@/components/action-form";
 import { SELECT_CLASS } from "@/components/locale-select";
 import type { Locale } from "@/config/i18n";
 
-import { enrolChild, openParentBillingPortal } from "./actions";
+import { todayInTimeZone } from "@/lib/occurrences";
+
+import {
+  bookMakeup,
+  enrolChild,
+  openParentBillingPortal,
+  reportAbsence,
+} from "./actions";
 
 import { PortalShell } from "./portal-shell";
 import { FamilyPicker } from "./family-picker";
@@ -75,12 +83,26 @@ export default async function PortalPage({
   const active =
     memberships.find((entry) => entry.familyId === requested) ?? memberships[0];
 
-  const [school, children, enrollments, classes, billing, labels] = await Promise.all([
+  /**
+   * Le jour de l'école, pas celui du serveur : à 20 h à Los Angeles, on est
+   * déjà demain à New York. Lu avant le reste, parce que les rattrapages en
+   * dépendent — « à venir » n'a de sens que dans un fuseau.
+   */
+  const schoolTimezone =
+    (await getPortalSchool(active.organizationId, active.familyId))?.timezone ??
+    "UTC";
+
+  const [school, children, enrollments, classes, billing, makeups, labels] = await Promise.all([
     getPortalSchool(active.organizationId, active.familyId),
     getPortalChildren(active.organizationId, active.familyId),
     getPortalEnrollments(active.organizationId, active.familyId),
     getPortalClasses(active.organizationId, active.familyId),
     getPortalBilling(active.organizationId, active.familyId),
+    getPortalMakeups(
+      active.organizationId,
+      active.familyId,
+      todayInTimeZone(schoolTimezone),
+    ),
     /**
      * Les libellés des foyers sont lus **sous contexte**, un par un — donc à
      * travers la RLS, qui confirme au passage que chacun est bien accessible.
@@ -263,6 +285,112 @@ export default async function PortalPage({
           </CardContent>
         </Card>
       ) : null}
+      {/*
+        Rattrapages.
+
+        Même honnêteté qu'à l'inscription : les places affichées sont
+        indicatives, et c'est le verrou pris sur la séance qui décide. Une
+        séance qui se remplit entre l'affichage et le tap produit un refus
+        expliqué, jamais une erreur technique.
+      */}
+      {makeups.upcoming.length > 0 || makeups.credits.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("makeupHeading")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {makeups.credits.length > 0 ? (
+              <ul className="flex flex-col gap-3 text-sm">
+                {makeups.credits.map((credit) => (
+                  <li
+                    key={credit.creditId}
+                    className="ring-foreground/10 rounded-xl p-3 ring-1"
+                  >
+                    <p className="font-medium">
+                      {t("makeupCredit", {
+                        child: credit.studentFirstName,
+                        date: credit.missedOn,
+                      })}
+                    </p>
+                    <p className="text-muted-foreground mt-0.5">
+                      {t(`makeupState_${credit.state}`)}
+                      {credit.usableThrough
+                        ? ` · ${t("makeupUsableThrough", { date: credit.usableThrough })}`
+                        : ""}
+                    </p>
+
+                    {credit.state === "available" ? (
+                      credit.options.length > 0 ? (
+                        <div className="mt-2">
+                          <ActionForm
+                            action={bookMakeup.bind(null, locale as Locale)}
+                            submitLabel={t("makeupBook")}
+                            size="sm"
+                          >
+                            <input type="hidden" name="familyId" value={active.familyId} />
+                            <input type="hidden" name="creditId" value={credit.creditId} />
+                            <select
+                              name="occurrenceId"
+                              aria-label={t("makeupSession")}
+                              className={SELECT_CLASS}
+                            >
+                              {credit.options.map((option) => (
+                                <option key={option.occurrenceId} value={option.occurrenceId}>
+                                  {option.date} · {option.klassTitle} — {t("seatsLeft", { left: option.seatsLeft })}
+                                </option>
+                              ))}
+                            </select>
+                          </ActionForm>
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground mt-2">
+                          {t("makeupNoOption")}
+                        </p>
+                      )
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {makeups.upcoming.filter((entry) => !entry.alreadyReported).length > 0 ? (
+              <ActionForm
+                action={reportAbsence.bind(null, locale as Locale)}
+                submitLabel={t("reportAbsence")}
+                size="sm"
+              >
+                <input type="hidden" name="familyId" value={active.familyId} />
+                <select
+                  name="occurrenceId"
+                  aria-label={t("makeupSession")}
+                  className={SELECT_CLASS}
+                >
+                  {makeups.upcoming
+                    .filter((entry) => !entry.alreadyReported)
+                    .map((entry) => (
+                      <option
+                        key={`${entry.occurrenceId}:${entry.studentId}`}
+                        value={entry.occurrenceId}
+                      >
+                        {entry.date} · {entry.studentFirstName} · {entry.klassTitle}
+                      </option>
+                    ))}
+                </select>
+                <input
+                  type="hidden"
+                  name="studentId"
+                  value={makeups.upcoming.find((entry) => !entry.alreadyReported)?.studentId ?? ""}
+                />
+              </ActionForm>
+            ) : null}
+
+            <p className="text-muted-foreground text-sm text-pretty">
+              {t("makeupNote")}
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {/*
         Factures — l'écran ne connaît QUE le miroir.
 

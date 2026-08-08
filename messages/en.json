@@ -383,6 +383,18 @@
     "invoiceOpen": "Open",
     "payInvoice": "Pay",
     "managePayment": "Manage payment method",
-    "dueOn": "due {date}"
+    "dueOn": "due {date}",
+    "makeupHeading": "Missed sessions",
+    "makeupCredit": "{child} · missed {date}",
+    "makeupUsableThrough": "usable through {date}",
+    "makeupState_available": "Credit available",
+    "makeupState_booked": "Booked",
+    "makeupState_used": "Used",
+    "makeupState_expired": "Expired",
+    "makeupBook": "Book",
+    "makeupSession": "Session",
+    "makeupNoOption": "No session of your child's level has room right now. Check back — places open up.",
+    "reportAbsence": "Report an absence",
+    "makeupNote": "Tell us before the lesson and we turn it into a credit. Places shown are indicative: if the session fills up before you tap, we say so rather than squeezing an extra child into the pool."
   }
 }

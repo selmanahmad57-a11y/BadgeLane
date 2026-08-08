@@ -383,6 +383,18 @@
     "invoiceOpen": "Abierta",
     "payInvoice": "Pagar",
     "managePayment": "Gestionar el método de pago",
-    "dueOn": "vence el {date}"
+    "dueOn": "vence el {date}",
+    "makeupHeading": "Sesiones perdidas",
+    "makeupCredit": "{child} · faltó el {date}",
+    "makeupUsableThrough": "válido hasta el {date}",
+    "makeupState_available": "Crédito disponible",
+    "makeupState_booked": "Reservado",
+    "makeupState_used": "Usado",
+    "makeupState_expired": "Caducado",
+    "makeupBook": "Reservar",
+    "makeupSession": "Sesión",
+    "makeupNoOption": "Ninguna sesión del nivel de tu hijo tiene sitio ahora mismo. Vuelve a mirar: las plazas se liberan.",
+    "reportAbsence": "Avisar de una ausencia",
+    "makeupNote": "Avísanos antes de la clase y la convertimos en un crédito. Las plazas mostradas son orientativas: si la sesión se llena antes de que pulses, te lo decimos en lugar de meter a un niño más en la piscina."
   }
 }

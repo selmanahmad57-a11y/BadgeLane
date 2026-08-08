@@ -1033,6 +1033,23 @@ export const makeupCredit = pgTable(
      */
     extendedUntil: date("extended_until"),
 
+    /**
+     * Qui a prolongé, et quand.
+     *
+     * Une décision stockée mérite sa provenance — même règle que
+     * `enrolledByGuardianId`. `extended_until` seul dirait *que* le crédit a
+     * été prolongé sans dire *par qui* : six mois plus tard, personne ne
+     * saurait si c'est un geste commercial assumé ou une manipulation oubliée.
+     *
+     * `set null` : perdre un membre du personnel ne doit pas emporter la
+     * prolongation qu'il a accordée à une famille.
+     */
+    extendedByStaffUserId: uuid("extended_by_staff_user_id").references(
+      () => staffUser.id,
+      { onDelete: "set null" },
+    ),
+    extendedAt: timestamp("extended_at", { withTimezone: true }),
+
     ...timestamps,
   },
   (table) => [

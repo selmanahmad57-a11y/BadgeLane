@@ -179,8 +179,17 @@ function checkUsedKeys(reference: Set<string>): {
        * L'oublier ici laisserait un reçu partir dans une langue non servie —
        * ce qui est exactement arrivé une fois.
        */
+      /**
+       * Deux formes, et une générique.
+       *
+       * `getTranslations("x")` d'un côté ; `namespace: "x"` de l'autre, qui
+       * couvre aussi bien `getTranslations({ locale, namespace })` que
+       * `createTranslator({ … })`. La seconde a été ajoutée parce que le
+       * contrôle a signalé lui-même le layout : ses clés de métadonnées
+       * n'étaient vérifiées par rien, et personne ne le savait.
+       */
       ...source.matchAll(
-        /(?:get|use)Translations\(\s*"([^"]+)"|createTranslator\(\{[^}]*namespace:\s*"([^"]+)"/g,
+        /(?:get|use)Translations\(\s*"([^"]+)"|namespace:\s*"([^"]+)"/g,
       ),
     ].flatMap((match) => [match[1], match[2]].filter(Boolean) as string[]);
 

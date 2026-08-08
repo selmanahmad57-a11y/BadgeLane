@@ -348,6 +348,8 @@ async function seedOrganization(
      * celles de la suivante d'être créées. Chaque ensemble porte donc son
      * propre contrôle d'existence.
      */
+    let createdGuardians = 0;
+
     const [createdFamily] = existing
       ? [existing]
       : await tx
@@ -362,6 +364,7 @@ async function seedOrganization(
       .returning();
 
     if (!existing) {
+      createdGuardians = DEMO.guardians.length;
       await tx.insert(guardian).values(
       DEMO.guardians.map((entry, position) => ({
         organizationId,
@@ -752,8 +755,15 @@ async function seedOrganization(
     console.log(
       [
         "Données de démonstration créées :",
-        `  1 famille   ${DEMO.family.primaryGuardianName}`,
-        `  2 tuteurs   ${DEMO.guardians.map((g) => g.name).join(", ")}`,
+        /**
+         * Des COMPTES, jamais « fait ».
+         *
+         * « Planning déjà présent » a caché trois fois un travail non
+         * accompli. Un nombre ne peut pas mentir de la même façon : un
+         * « 0 ajouté » saute aux yeux là où une phrase rassurante ne dit rien.
+         */
+        `  famille     ${existing ? "déjà présente" : "créée"} — ${DEMO.family.primaryGuardianName}`,
+        `  tuteurs     ${createdGuardians} ajouté(s), ${DEMO.guardians.length - createdGuardians} déjà présent(s)`,
         `  élèves      ${createdStudents} créé(s), ${DEMO.students.length - createdStudents} déjà présent(s)`,
         awardedSkills > 0
           ? `  badges      ${awardedSkills} compétence(s) acquise(s) par le premier élève — son badge de niveau est visible au portail`

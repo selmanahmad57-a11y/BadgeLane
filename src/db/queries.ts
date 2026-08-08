@@ -37,6 +37,7 @@ import {
   level,
   location,
   makeupCredit,
+  organization,
   program,
   skill,
   skillProgress,
@@ -1182,4 +1183,56 @@ export async function getEnrollmentsToReview(
       )
       .orderBy(desc(enrollment.createdAt)),
   );
+}
+
+export type SchoolSummary = {
+  families: number;
+  students: number;
+  activeEnrollments: number;
+  waitlisted: number;
+  outstanding: number;
+  currency: string;
+};
+
+/**
+ * Le résumé qu'une école voit en ouvrant sa console.
+ *
+ * ── Ce qu'il remplace ────────────────────────────────────────────────────────
+ *
+ * Un bandeau « rien à afficher — les classes, les familles et la facturation
+ * arrivent aux prochaines étapes », vestige de la Semaine 1. Il était vrai le
+ * jour où il a été écrit, et faux dès la Semaine 3 : un directeur lisait
+ * « rien à afficher » juste au-dessus de ses propres familles.
+ *
+ * Un écran qui affirme une chose que les données démentent coûte plus cher
+ * qu'un écran vide : il apprend à ne pas lire ce qui est écrit.
+ */
+export async function getSchoolSummary(
+  organizationId: string,
+): Promise<SchoolSummary> {
+  return withTenant(organizationId, async (tx) => {
+    const [counts] = await tx
+      .select({
+        families: sql<number>`(select count(*)::int from ${family} where ${family.organizationId} = ${organizationId})`,
+        students: sql<number>`(select count(*)::int from ${student} where ${student.organizationId} = ${organizationId})`,
+        activeEnrollments: sql<number>`(select count(*)::int from ${enrollment} where ${enrollment.organizationId} = ${organizationId} and ${enrollment.status} = 'active')`,
+        waitlisted: sql<number>`(select count(*)::int from ${enrollment} where ${enrollment.organizationId} = ${organizationId} and ${enrollment.status} = 'waitlisted')`,
+        outstanding: sql<number>`(select coalesce(sum(${invoice.amount}), 0)::int from ${invoice} where ${invoice.organizationId} = ${organizationId} and ${invoice.status} in ('open', 'uncollectible'))`,
+        currency: organization.currency,
+      })
+      .from(organization)
+      .where(eq(organization.id, organizationId))
+      .limit(1);
+
+    return (
+      counts ?? {
+        families: 0,
+        students: 0,
+        activeEnrollments: 0,
+        waitlisted: 0,
+        outstanding: 0,
+        currency: "",
+      }
+    );
+  });
 }

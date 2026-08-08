@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireOrganizationSession } from "@/lib/auth";
 import { ActionForm } from "@/components/action-form";
 import { can } from "@/config/permissions";
-import { getEnrollmentsToReview } from "@/db/queries";
+import { getEnrollmentsToReview, getSchoolSummary } from "@/db/queries";
 
 import {
   endEnrollment,
@@ -38,6 +38,8 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
   const toReview = can(session.staffUser.role, "schedule:write")
     ? await getEnrollmentsToReview(session.organization.id)
     : [];
+
+  const summary = await getSchoolSummary(session.organization.id);
 
   const facts = [
     { label: t("schoolLabel"), value: session.organization.name },
@@ -144,12 +146,38 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
         ))}
       </dl>
 
-      <Card className="border-dashed">
+      {/*
+        Un résumé réel, à la place d'un bandeau « rien à afficher » écrit en
+        Semaine 1 et devenu faux dès la Semaine 3. Un écran qui affirme une
+        chose que les données démentent apprend à ne pas lire ce qui est écrit.
+      */}
+      <Card>
         <CardHeader>
-          <CardTitle>{t("emptyHeading")}</CardTitle>
+          <CardTitle>{t("summaryHeading")}</CardTitle>
         </CardHeader>
-        <CardContent className="text-muted-foreground text-sm text-pretty">
-          {t("emptyBody")}
+        <CardContent>
+          <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+            <dt className="text-muted-foreground">{t("summaryFamilies")}</dt>
+            <dd>{t("summaryFamiliesValue", { families: summary.families, students: summary.students })}</dd>
+
+            <dt className="text-muted-foreground">{t("summaryEnrollments")}</dt>
+            <dd>
+              {t("summaryEnrollmentsValue", {
+                active: summary.activeEnrollments,
+                waitlisted: summary.waitlisted,
+              })}
+            </dd>
+
+            <dt className="text-muted-foreground">{t("summaryOutstanding")}</dt>
+            <dd>
+              {summary.currency
+                ? new Intl.NumberFormat(locale, {
+                    style: "currency",
+                    currency: summary.currency,
+                  }).format(summary.outstanding / 100)
+                : "—"}
+            </dd>
+          </dl>
         </CardContent>
       </Card>
     </ConsoleShell>
